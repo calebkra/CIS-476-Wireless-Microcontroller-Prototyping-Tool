@@ -4,13 +4,6 @@ import json
 import classes
 
 
-            
-
-msgQueue = Queue()
-ConnectionInstance = classes.Connection()
-ProxyInstance = classes.connProxy("1234",ConnectionInstance)
-
-
 def on_message(client, userdata, msg):
     msgJson = json.loads(msg.payload.decode('utf-8'))
     ProxyInstance.authenticate(msgJson)
@@ -19,9 +12,27 @@ client = mqtt.Client()
 client.on_message = on_message
 client.connect('127.0.0.1', 1883)
 
+#msgQueue = Queue()
+ConnectionInstance = classes.Connection(client)
+ProxyInstance = classes.connProxy("1234",ConnectionInstance)
+
 client.loop_start()
 
-client.subscribe("Test/Server")
+#subscribe to server topic to listen to incoming messages
+client.subscribe("Test/Server",qos=2)
+
+eFactory = classes.Esp32Factory(ConnectionInstance)
+pFactory = classes.PicoFactory(ConnectionInstance)
+gFactory = classes.GUIFactory(ConnectionInstance
+                              )
+e1 = eFactory.createMicrocontroller("01")
+p1 = pFactory.createMicrocontroller("02")
+g1 = gFactory.createGUI("03")
+
+e1.sendMsg(json.dumps({"Message":"ESP32"}))
+p1.sendMsg(json.dumps({"Message":"Pico"}))
+g1.sendMsg(json.dumps({"Message":"GUI"}))
+
 
 while True:
    msg = ConnectionInstance.getMessage()
