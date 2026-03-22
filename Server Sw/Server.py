@@ -23,8 +23,14 @@ client.subscribe("Test/Server",qos=2)
 
 eFactory = classes.Esp32Factory(ConnectionInstance)
 pFactory = classes.PicoFactory(ConnectionInstance)
-gFactory = classes.GUIFactory(ConnectionInstance
-                              )
+gFactory = classes.GUIFactory(ConnectionInstance)
+
+factoryDictionary = {
+    "ESP32": eFactory,
+    "Pico" : pFactory,
+    "GUI" : gFactory
+}
+
 e1 = eFactory.createMicrocontroller("01")
 p1 = pFactory.createMicrocontroller("02")
 g1 = gFactory.createGUI("03")
