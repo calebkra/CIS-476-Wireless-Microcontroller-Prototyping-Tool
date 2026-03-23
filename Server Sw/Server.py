@@ -35,14 +35,9 @@ e1 = eFactory.createMicrocontroller("01")
 p1 = pFactory.createMicrocontroller("02")
 g1 = gFactory.createGUI("03")
 
-e1.sendMsg(json.dumps({"Message":"ESP32"}))
-p1.sendMsg(json.dumps({"Message":"Pico"}))
-g1.sendMsg(json.dumps({"Message":"GUI"}))
+mediator = classes.Mediator(ConnectionInstance,factoryDictionary)
 
 
-while True:
-   msg = ConnectionInstance.getMessage()
-   if not msg == None:
-       print(msg["Message"])
+mediator.startMediation()
 
 client.loop_end()

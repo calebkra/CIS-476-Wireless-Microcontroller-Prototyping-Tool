@@ -142,7 +142,7 @@ class Mediator:
                     #find microcontroller instance
                     for microcontrollerInst in self.microcontrollerList:
                         microcontrollerInstance = microcontrollerInst
-                        if microcontrollerInst == currentMessage["Message"]:
+                        if microcontrollerInst.ID == currentMessage["Message"]:
                             break
                         else:
                             GUIinstance.sendMsg(json.dumps({"ID":"Server", "Key":"1234","Client_Command":"Bind Unsuccessful"}))
@@ -151,55 +151,58 @@ class Mediator:
                 if microcontrollerInstance != None:
                     currGUIMapList = self.microcontrollerGUIMapping.get(f"{microcontrollerInstance.ID}",None)
                     if currGUIMapList == None :
-                        self.microcontrollerGUIMapping.update(f"{microcontrollerInstance.ID}") = list(GUIinstance.ID)
+                        tempList = list()
+                        tempList.append(GUIinstance.ID)
+                        self.microcontrollerGUIMapping.update({f"{microcontrollerInstance.ID}":tempList}) 
                         GUIinstance.sendMsg(json.dumps({"ID":"Server", "Key":"1234","Client_Command":"Bind Successful"}))
                     else:
                         currGUIMapList.append(GUIinstance.ID)
-                        self.microcontrollerGUIMapping.update(f"{microcontrollerInstance.ID}") = currGUIMapList
+                        self.microcontrollerGUIMapping.update({f"{microcontrollerInstance.ID}":currGUIMapList})
                         GUIinstance.sendMsg(json.dumps({"ID":"Server", "Key":"1234","Client_Command":"Bind Successful"}))
+                    print(self.microcontrollerGUIMapping)
+               
+            if currentMessage["Server_Command"] == "Disconnect":
+                if currentMessage["Device_Type"] == "GUI":
+                    keyList = [key for key, val in self.microcontrollerGUIMapping if currentMessage["ID"] in val]
 
-                if currentMessage["Server_Command"] == "Disconnect":
-                    if currentMessage["Device_Type"] == "GUI":
-                        keyList = [key for key, val in self.microcontrollerGUIMapping if currentMessage["ID"] in val]
+                    for key in keyList:
+                        currList = self.microcontrollerGUIMapping[key]
+                        currList.remove(currentMessage["ID"])
+                        if not currList:
+                            self.microcontrollerGUIMapping.pop(key,None)
+                        else:
+                            self.microcontrollerGUIMapping[key]=currList
 
-                        for key in keyList:
-                            currList = self.microcontrollerGUIMapping[key]
-                            currList.remove(currentMessage["ID"])
-                            if not currList:
-                                self.microcontrollerGUIMapping.pop(key,None)
-                            else:
-                                self.microcontrollerGUIMapping[key]=currList
-
-                    if currentMessage["Device_Type"] == "ESP32" or currentMessage["Device_Type"] == "Pico":
-                        currList = self.microcontrollerGUIMapping.get(currentMessage["ID"])
-                        if currList:
-                           for GUIid in currList:
-                               for gui in self.GUIList:
-                                   if gui.ID == GUIid:
-                                       gui.sendMessage(json.dumps({"ID":"Server","Key":"1234", "Client_Command":"Microcontroller_Disconnect"}))
-                        
+                if currentMessage["Device_Type"] == "ESP32" or currentMessage["Device_Type"] == "Pico":
+                    currList = self.microcontrollerGUIMapping.get(f"{currentMessage["ID"]}")
+                    if currList:
+                        for GUIid in currList:
+                            for gui in self.GUIList:
+                                if gui.ID == GUIid:
+                                    gui.sendMsg(json.dumps({"ID":"Server","Key":"1234", "Client_Command":"Microcontroller_Disconnect"}))
+                    
                         self.microcontrollerGUIMapping.pop(currentMessage["ID"])
             
             if currentMessage["Server_Command"] == "Send_Message":
                 if currentMessage["Device_Type"] == "GUI":
                     for microcontroller in self.microcontrollerList:
                         if microcontroller.ID == currentMessage["Reciever_ID"]:
-                            microcontroller.sendMessage(currentMessage)
+                            microcontroller.sendMsg(json.dumps(currentMessage))
                 if currentMessage["Device_Type"] == "ESP32" or currentMessage["Device_Type"] == "Pico":
                     currList = self.microcontrollerGUIMapping[currentMessage["ID"]]
                     for guiId in currList:
                         for gui in self.GUIList:
-                            if gui.ID == currentMessage["Reciever_ID"]:
-                                gui.sendMessage(currentMessage)
+                            if gui.ID == guiId:
+                                gui.sendMsg(json.dumps(currentMessage))
 
             if currentMessage["Server_Command"] == "Get_Microcontrollers":
                 if currentMessage["Device_Type"] == "GUI":
                     idList = dict()
                     for microcontroller in self.microcontrollerList:
-                      idList.update({f"{microcontroller.ID}":f"{microcontroller.Device_type}"})
+                      idList.update({f"{microcontroller.ID}":f"{microcontroller.Device_Type}"})
 
                     for gui in self.GUIList:
                         if gui.ID == currentMessage["ID"]:
-                            gui.sendMessage(json.dumps({"ID":"Server", "Key":"1234", "Client_Command":"Recieve_Microcontrollers", "Message":f"{idList}"}))
+                            gui.sendMsg(json.dumps({"ID":"Server", "Key":"1234", "Client_Command":"Recieve_Microcontrollers", "Message":f"{idList}"}))
 
         
