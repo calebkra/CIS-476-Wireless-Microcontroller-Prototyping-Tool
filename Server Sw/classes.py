@@ -200,7 +200,7 @@ class Mediator:
                     idList = dict()
                     for microcontroller in self.microcontrollerList:
                       idList.update({f"{microcontroller.ID}":f"{microcontroller.Device_Type}"})
-
+                      
                     for gui in self.GUIList:
                         if gui.ID == currentMessage["ID"]:
                             gui.sendMsg(json.dumps({"ID":"Server", "Key":"1234", "Client_Command":"Recieve_Microcontrollers", "Message":f"{idList}"}))
