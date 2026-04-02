@@ -86,8 +86,8 @@ void loop() {
     // SOCKET PROGRAMMING GOES HERE 
     JsonDocument doc; // https://arduinojson.org/v7/api/
     doc["deviceId"] = "02";
-    doc["authCode"] = "1234"; // todo not hardcode 
-    // doc["authCode"] = AUTH_CODE;
+    // doc["authCode"] = "1234"; // todo not hardcode 
+    doc["authCode"] = AUTH_CODE;
     doc["sensorValue"] = incomingMsg.sensorValue; // 
     doc["timestamp"] = incomingMsg.timestamp;
 
