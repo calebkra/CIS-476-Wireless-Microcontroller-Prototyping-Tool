@@ -5,6 +5,9 @@
 #include <ArduinoJson.h>
 #include "secrets.h" 
 
+// ==========================================
+//    pico cpp
+// ==========================================
 
 //  DATA STRUCTURE & QUEUE SETUP
 // Define the shape of the data you want to pass between cores
@@ -43,8 +46,8 @@ void reconnet() {
 
 //  WI-FI CONFIGURATION
 // i dont think having this in the main file is the startest way to do this tbh though.
-const char* WIFI_SSID = "YOUR_WIFI_SSID"; // AsusLAN
-const char* WIFI_PASS = "YOUR_WIFI_PASSWORD"; // ISCISCLAN6
+// const char* WIFI_SSID = "YOUR_WIFI_SSID"; 
+// const char* WIFI_PASS = "YOUR_WIFI_PASSWORD"; 
 
 
 // CORE 0: Handles Wi-Fi and MQTT
@@ -82,7 +85,7 @@ void loop() {
 
   client.loop(); // Important: Allows MQTT client to process incoming messages and maintain connection
   
-  // Try to grab data from the queue (non-blocking!)
+  // Try to grab data from the queue
   if (queue_try_remove(&coreQueue, &incomingMsg)) {
     Serial.print("[Core 0] Data received from Core 1 -> Value: ");
     Serial.print(incomingMsg.sensorValue);
@@ -91,6 +94,11 @@ void loop() {
     
     // SOCKET PROGRAMMING GOES HERE 
     JsonDocument doc; // https://arduinojson.org/v7/api/
+    doc["deviceId"] = "02";
+    doc["authCode"] = "1234"; // todo not hardcode 
+    // doc["authCode"] = AUTH_CODE;
+    doc["sensorValue"] = incomingMsg.sensorValue; // 
+    doc["timestamp"] = incomingMsg.timestamp;
 
     // pack the data from Core 1 into JSON format
     
@@ -123,5 +131,6 @@ void loop1() {
   }
 
   // Simulate doing work every 2 seconds
+  // TODO  remove when working
   delay(2000); 
 }
