@@ -73,7 +73,8 @@ void loop() {
     reconnet();
   }
 
-  client.loop(); // Important: Allows MQTT client to process incoming messages and maintain connection
+  client.loop();  // Important: Allows MQTT client to process incoming messages and 
+                  // maintain connection
   
   // Try to grab data from the queue
   if (queue_try_remove(&coreQueue, &incomingMsg)) {
