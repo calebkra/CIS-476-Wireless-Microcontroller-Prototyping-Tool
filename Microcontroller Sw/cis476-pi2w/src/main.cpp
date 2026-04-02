@@ -80,7 +80,7 @@ void setup() {
 void loop() {
   // stanity check the MQTT connection
   if (!client.connected()) {
-    reconned  ();
+    reconnet();
   }
 
   client.loop(); // Important: Allows MQTT client to process incoming messages and maintain connection
