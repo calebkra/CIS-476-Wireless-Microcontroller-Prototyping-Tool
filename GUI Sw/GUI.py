@@ -2,11 +2,26 @@ import tkinter as tk
 import paho.mqtt.client as mqtt
 import json
 from tkinter import ttk
+from abc import ABC, abstractmethod
+from tkinter import messagebox
 
-class ConnectionHandler:
-    def __init__(self):
-        self.ServerTopic = "Test/Server"
-        self.Connected = False
+#Singleton class, however different from normal implimentation since python does not support private constructors
+class ConnectionHandler: 
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super().__new__(cls, *args, **kwargs)
+        return cls._instance
+
+    def __init__(self, initial_value=None):
+        if not hasattr(self, '_initialized'):
+            self.value = initial_value
+            self._initialized = True 
+            self.ServerTopic = "Test/Server"
+            self.Connected = False
+            self.MCID = None
+            self.MCType = None
 
     def connect(self,server_ip,port,server_key,gui_id):
         self.SelfTopic = f"GUI/{gui_id}"
@@ -14,6 +29,7 @@ class ConnectionHandler:
         self.GUIID = gui_id
         self.client = mqtt.Client()
         self.client.on_message = self.__on_message
+        self.client.will_set("Test/Server",json.dumps({"ID":gui_id,"Key":server_key,"Device_Type":"GUI","Server_Command":"Disconnect"}),qos=2)
         self.client.connect(server_ip, port)
         self.client.subscribe(self.SelfTopic,qos=2)
         self.client.loop_start()
@@ -34,11 +50,18 @@ class ConnectionHandler:
         if msgJson["Client_Command"] == "Connection Success":
             self.Connected = True
         if self.CurrentWindow.WindowID == "Connection Dashboard":
-             if msgJson["Client_Command"] == "Recieve_Microcontrollers":
-                 microcontrollerDict = dict()
-                 microcontrollerDict = eval(msgJson["Message"])
-                 self.CurrentWindow.setMicrocontrollerCombobox(microcontrollerDict)
-                 self.CurrentWindow.MCselectionFieldButton.state(['!disabled'])
+            if msgJson["Client_Command"] == "Recieve_Microcontrollers":
+                microcontrollerDict = dict()
+                microcontrollerDict = eval(msgJson["Message"])
+                self.CurrentWindow.setMicrocontrollerCombobox(microcontrollerDict)
+                self.CurrentWindow.MCselectionFieldButton.state(['!disabled'])
+            if msgJson["Client_Command"] == "Bind Successful":
+                self.closeCurrentWindow() 
+        else:
+            if msgJson["Client_Command"] == "Recieve State":
+                state = msgJson["Message"]
+                self.CurrentWindow.fillMCStates(state)   
+            
 
     def setActiveWindow(self,currWindow):
         self.CurrentWindow = currWindow
@@ -47,8 +70,16 @@ class ConnectionHandler:
         self.MCID = id
         self.MCType = mctype
 
+    def getActiveMC(self):
+        return self.MCID,self.MCType
+
+    #This method will close the current window and allow the main loop to handle creating new window
+    def closeCurrentWindow(self):
+        self.CurrentWindow.closeWindow()
+
 
 class ConnectionDashboard:
+    #sets up the GUI layout, manipulation done by method calls
     def __init__(self,connHandler):
         self.WindowID = "Connection Dashboard"
         self.ConnectionHandler = connHandler
@@ -70,7 +101,7 @@ class ConnectionDashboard:
         self.frame.rowconfigure(index=3, weight=1)
         self.frame.rowconfigure(index=4, weight=1)
         self.frame.rowconfigure(index=5, weight=1)
-        self.frame.rowconfigure(index=6, weight=1 )
+        self.frame.rowconfigure(index=6, weight=1)
         
 
         self.ipLabel = tk.Label(self.frame,text="Server IP Address: ")
@@ -110,6 +141,7 @@ class ConnectionDashboard:
 
         self.ConnWindow.mainloop()
     
+    #retreives entered server information and sends a connection request to the server
     def findMicrocontrollers(self):
         if self.ConnectionHandler.isConnected() == False:
             IP = self.ipField.get().strip()
@@ -123,6 +155,7 @@ class ConnectionDashboard:
             self.ConnectionHandler.sendMessage({"Server_Command":"Get_Microcontrollers"})
             #updating combobox will be handled by on message
 
+    #Populates the combobox with MC choices
     def setMicrocontrollerCombobox(self,IdDict):
         IdListItems = list(IdDict.items())
         IdList = list()
@@ -132,6 +165,7 @@ class ConnectionDashboard:
 
         self.MCselectionField["values"]=IdList
 
+    #gets the microcontroller selected, parses the string, and sets the current MC for the connection class
     def processMCSelection(self):
         selection = self.microcontrollerSelection.get()
         selectionInfo = selection.split(", ")
@@ -142,10 +176,252 @@ class ConnectionDashboard:
         mcType2 = mcType1.replace(")","")
         mcType = mcType2.replace("(","")
         self.ConnectionHandler.setActiveMC(mcID,mcType)
+        self.ConnectionHandler.sendMessage({"Message":mcID,"Server_Command":"Bind"})
+        #on message will handle the call to teardown this window and open new window
+        #upon reciept of successful binding 
 
+    def closeWindow(self):
+        self.ConnWindow.destroy()
+
+class abstractMCDisplayGUI(ABC):
+    #will send new state for pin to MC for the MC to manipulate pin state accordingly
+    @abstractmethod
+    def setMCStates(self,pin,value):
+        pass
+
+    #will fill out the labels that display MC pin states
+    @abstractmethod
+    def fillMCStates(self,states):
+        pass
+
+    #Will create and start the GUI
+    @abstractmethod
+    def runGUI(self):
+        pass
+
+class RpiZeroGUI(abstractMCDisplayGUI):
+    def __init__(self,connectionHandler):
+        self.WindowID = "RPI Zero Dashboard"
+        self.ConnectionHandler = connectionHandler
+        self.ConnectionHandler.setActiveWindow(self)
+        MC = self.ConnectionHandler.getActiveMC()
+        self.MCID = MC[0]
+        self.delayInterval = 50
+    
+    def runGUI(self):
+        self.Window = tk.Tk()
+        self.Window.geometry(newGeometry="680x360")
+        self.Window.title("Microcontroller Prototyping Tool")
+        self.Window.resizable(False,False)
+
+        self.frame = tk.Frame(self.Window)
+
+        self.xpad = 10
+        self.ypad = 10
+
+        #set up rows and columns for grid layout
+        self.frame.columnconfigure(index=0, weight=1)
+        self.frame.columnconfigure(index=1, weight=1)
+        self.frame.columnconfigure(index=2, weight=1)
+        self.frame.columnconfigure(index=3, weight=1)
+        self.frame.columnconfigure(index=4, weight=1)
+        self.frame.rowconfigure(index=0, weight=1)
+        self.frame.rowconfigure(index=2, weight=1)
+        self.frame.rowconfigure(index=3, weight=1)
+        self.frame.rowconfigure(index=4, weight=1)
+        self.frame.rowconfigure(index=5, weight=1)
+        self.frame.rowconfigure(index=6, weight=1)
+
+        #create header labels and place in grid
+        self.currStateLabel = tk.Label(self.frame,text="Current State",font=("TkDefaultFont",12,"bold"))
+        self.currStateLabel.grid(row=0, column=0, columnspan=2, pady=self.ypad)
+        self.setStateLabel = tk.Label(self.frame, text="Set States",font=("TkDefaultFont",12,"bold"))
+        self.setStateLabel.grid(row=0, column=2, columnspan=2,pady=self.ypad)
+
+        #creates elements for current state and place in grid
+        self.digIn1Label = tk.Label(self.frame, text="Digital Input 1: ")
+        self.digIn1Label.grid(row=1, column=0,pady=self.ypad)
+        self.digIn1State = tk.Label(self.frame, text="None", borderwidth= 2, relief="groove",width=25,bg="white")
+        self.digIn1State.grid(row=1, column=1,pady=self.ypad)
+
+        self.digIn2Label = tk.Label(self.frame, text="Digital Input 2: ")
+        self.digIn2Label.grid(row=2, column=0,pady=self.ypad)
+        self.digIn2State = tk.Label(self.frame, text="None", borderwidth= 2, relief="groove",width=25,bg="white")
+        self.digIn2State.grid(row=2, column=1,pady=self.ypad)
+
+        self.digOut1Label = tk.Label(self.frame, text="Digital Output 1: ")
+        self.digOut1Label.grid(row=3, column=0,pady=self.ypad)
+        self.digOut1State = tk.Label(self.frame, text="None", borderwidth= 2, relief="groove",width=25,bg="white")
+        self.digOut1State.grid(row=3, column=1,pady=self.ypad)
+
+        self.digOut2Label = tk.Label(self.frame, text="Digital Output 2: ")
+        self.digOut2Label.grid(row=4, column=0,pady=self.ypad)
+        self.digOut2State = tk.Label(self.frame, text="None", borderwidth= 2, relief="groove",width=25,bg="white")
+        self.digOut2State.grid(row=4, column=1,pady=self.ypad)
+
+        self.PWM1Label = tk.Label(self.frame, text="Digital PMW 1: ")
+        self.PWM1Label.grid(row=5, column=0,pady=self.ypad)
+        self.PWM1State = tk.Label(self.frame, text="None", borderwidth= 2, relief="groove",width=25,bg="white")
+        self.PWM1State.grid(row=5, column=1,pady=self.ypad)
+
+        self.PWM2Label = tk.Label(self.frame, text="Digital PMW 2: ")
+        self.PWM2Label.grid(row=6, column=0,pady=self.ypad)
+        self.PWM2State = tk.Label(self.frame, text="None", borderwidth= 2, relief="groove",width=25,bg="white")
+        self.PWM2State.grid(row=6, column=1,pady=self.ypad)
+
+        #creates elements for current state and place in grid
+        
+        self.digitalOutputOptions = ["HIGH","LOW"]
+        self.setDigOut1Label = tk.Label(self.frame, text="Digital Output 1: ")
+        self.setDigOut1Label.grid(row=3,column=2,pady=self.ypad)
+        self.DigOut1Val = tk.StringVar(value=self.digitalOutputOptions[0])
+        self.setDigOut1Combobox = ttk.Combobox(self.frame,textvariable=self.DigOut1Val,values=self.digitalOutputOptions,state="readonly")
+        self.setDigOut1Combobox.grid(row=3,column=3,pady=self.ypad)
+        self.setDigOut1Button = tk.Button(self.frame, text="Set",width=10, relief="groove",command=self.setDigOut1Val)
+        self.setDigOut1Button.grid(row=3,column=4,pady=self.ypad)
+
+        self.setDigOut2Label = tk.Label(self.frame, text="Digital Output 2: ")
+        self.setDigOut2Label.grid(row=4,column=2,pady=self.ypad)
+        self.DigOut2Val = tk.StringVar(value=self.digitalOutputOptions[0])
+        self.setDigOut2Combobox = ttk.Combobox(self.frame,textvariable=self.DigOut2Val,values=self.digitalOutputOptions,state='readonly')
+        self.setDigOut2Combobox.grid(row=4,column=3,pady=self.ypad)
+        self.setDigOut2Button = tk.Button(self.frame, text="Set",width=10, relief="groove",command=self.setDigOut2Val)
+        self.setDigOut2Button.grid(row=4,column=4,pady=self.ypad)
+
+        self.setPWM1Label = tk.Label(self.frame, text="PWM 1: ")
+        self.setPWM1Label.grid(row=5,column=2,pady=self.ypad)
+        self.setPWM1Entry = tk.Entry(self.frame)
+        self.setPWM1Entry.grid(row=5,column=3,pady=self.ypad)
+        self.setPWM1Button = tk.Button(self.frame, text="Set",width=10, relief="groove", command=self.setPWM1Val)
+        self.setPWM1Button.grid(row=5,column=4,pady=self.ypad)
+
+        self.setPWM2Label = tk.Label(self.frame, text="PWM 2: ")
+        self.setPWM2Label.grid(row=6,column=2,pady=self.ypad)
+        self.setPWM2Entry = tk.Entry(self.frame)
+        self.setPWM2Entry.grid(row=6,column=3,pady=self.ypad)
+        self.setPWM2Button = tk.Button(self.frame, text="Set",width=10, relief="groove", command=self.setPWM2Val)
+        self.setPWM2Button.grid(row=6,column=4,pady=self.ypad)
+
+        self.frame.pack(fill="x",expand=False)
+        self.Window.mainloop()
+        
+        
+    #button conmmand methods that will forward pin and value to set MC states
+
+    def setDigOut1Val(self):
+        val = self.setDigOut1Combobox.get()
+        self.setMCStates("DO1",val)
+        self.Window.after(self.delayInterval,self.getMCStates)
+
+
+    def setDigOut2Val(self):
+        val = self.setDigOut2Combobox.get()
+        self.setMCStates("DO2",val)
+        self.Window.after(self.delayInterval,self.getMCStates)
+
+    def setPWM1Val(self):
+        try:
+            pwmVal = self.setPWM1Entry.get()
+            value = int(pwmVal)
+
+            if value > 100 or value < 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Error","Please enter an integer between 1-100")
+            return
+
+        self.setMCStates("PWM1",value=value)
+        self.Window.after(self.delayInterval,self.getMCStates)
+
+    def setPWM2Val(self):
+        try:
+            pwmVal = self.setPWM2Entry.get()
+            value = int(pwmVal)
+
+            if value > 100 or value < 0:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Error","Please enter an integer between 1-100")
+            return
+
+        self.setMCStates("PWM2",value=value)
+        self.Window.after(self.delayInterval,self.getMCStates)
+
+
+
+    #sends pin and corresponding value for the MC to update
+    def setMCStates(self, pin, value):
+        self.ConnectionHandler.sendMessage({"Server_Command":"Send_Message","Reciever_ID":self.MCID,"Client_Command":"Set State", "Message":{pin:value}})
+
+    #takes new pin states, and updates display windows accordingly
+    def fillMCStates(self, states):
+        #get current label states for comparsion
+        currentDI1 = self.digIn1State.cget("text")
+        currentDI2 = self.digIn2State.cget("text")
+        currentDO1 = self.digOut1State.cget("text")
+        currentDO2 = self.digOut2State.cget("text")
+        currentPWM1 = self.PWM1State.cget("text")
+        currentPWM2 = self.PWM2State.cget("text")
+
+        #get new states for comparison
+        newDI1 = states.get("DI1","None")
+        newDI2 = states.get("DI2","None")
+        newDO1 = states.get("DO1","None")
+        newDO2 = states.get("DO2","None")
+        newPWM1 = states.get("PWM1","None")
+        newPWM2= states.get("PWM2","None")
+
+        #check if new state provided, if so check if display would change, if so update accordingly 
+
+        if newDI1 != "None":
+            if currentDI1 != newDI1:
+                self.digIn1State.config(text=newDI1)
+
+        if newDI2 != "None":
+            if currentDI2 != newDI2:
+                self.digIn2State.config(text=newDI2)
+
+        if newDO1 != "None":
+            if currentDO1 != newDO1:
+                self.digOut1State.config(text=newDO1)
+
+        if newDO2 != "None":
+            if currentDO2 != newDO2:
+                self.digOut2State.config(text=newDO2)
+
+        if newPWM1 != "None":
+            if currentPWM1 != newPWM1:
+                self.PWM1State.config(text=newPWM1)
+        
+        if newPWM2 != "None":
+            if currentPWM2 != newPWM2:
+                self.PWM2State.config(text=newPWM2)
+
+    
+    def getMCStates(self):
+        self.ConnectionHandler.sendMessage({"Server_Command":"Send_Message","Reciever_ID":self.MCID,"Client_Command":"Get State"})
+
+
+class abstractGuiFactory(ABC):
+    @abstractmethod
+    def createGUI(self,connectionHandler) -> abstractMCDisplayGUI:
+        pass
+
+class RpiZeroFactory(abstractGuiFactory):
+    def __init__(self):
+        self.FactoryID = "Rpi Zero"
+        
+
+    def createGUI(self, connectionHandler) ->abstractMCDisplayGUI:
+        return RpiZeroGUI(connectionHandler)
+        
+    
 
 
 
 conn = ConnectionHandler()
+rpiFactory = RpiZeroFactory()
 ConnWindow = ConnectionDashboard(conn)
+window=rpiFactory.createGUI(conn)
+window.runGUI()
 
