@@ -163,7 +163,7 @@ class Mediator:
                
             if currentMessage["Server_Command"] == "Disconnect":
                 if currentMessage["Device_Type"] == "GUI":
-                    keyList = [key for key, val in self.microcontrollerGUIMapping if currentMessage["ID"] in val]
+                    keyList = [key for key, val in self.microcontrollerGUIMapping.items() if currentMessage["ID"] in val]
 
                     for key in keyList:
                         currList = self.microcontrollerGUIMapping[key]
