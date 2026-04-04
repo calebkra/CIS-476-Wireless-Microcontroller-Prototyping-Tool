@@ -163,7 +163,7 @@ class Mediator:
                
             if currentMessage["Server_Command"] == "Disconnect":
                 if currentMessage["Device_Type"] == "GUI":
-                    keyList = [key for key, val in self.microcontrollerGUIMapping if currentMessage["ID"] in val]
+                    keyList = [key for key, val in self.microcontrollerGUIMapping.items() if currentMessage["ID"] in val]
 
                     for key in keyList:
                         currList = self.microcontrollerGUIMapping[key]
@@ -200,7 +200,7 @@ class Mediator:
                     idList = dict()
                     for microcontroller in self.microcontrollerList:
                       idList.update({f"{microcontroller.ID}":f"{microcontroller.Device_Type}"})
-
+                      
                     for gui in self.GUIList:
                         if gui.ID == currentMessage["ID"]:
                             gui.sendMsg(json.dumps({"ID":"Server", "Key":"1234", "Client_Command":"Recieve_Microcontrollers", "Message":f"{idList}"}))
