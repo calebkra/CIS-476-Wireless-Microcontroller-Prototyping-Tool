@@ -146,7 +146,7 @@ void loop() {
     Serial.print(" | Time: ");
     Serial.println(incomingMsg.timestamp);
     
-    // SOCKET PROGRAMMING GOES HERE 
+    // pack the data from Core 1 into JSON format
     JsonDocument doc; // https://arduinojson.org/v7/api/
     doc["deviceId"] = "02";
     // doc["authCode"] = "1234"; // todo not hardcode 
@@ -154,13 +154,25 @@ void loop() {
     doc["sensorValue"] = incomingMsg.sensorValue; // 
     doc["timestamp"] = incomingMsg.timestamp;
 
-    // pack the data from Core 1 into JSON format
+    // actually publich the message
+    char jsonBuffer[256]; // Create a temporary text buffer
+    serializeJson(doc, jsonBuffer); // Turn the JSON object into text
+    
+    // Publish to a topic (e.g., "pico/sensors")
+    // TODO CHANGES THE TOPICS
+    if(client.publish("pico/sensors", jsonBuffer)) {
+        Serial.println("MQTT Publish Success!");
+    } else {
+        Serial.println("MQTT Publish Failed.");
+    }
     
   }
   
+
+
   // Core 0 handles other non-blocking network tasks here
   // e.g., checking for incoming socket clients
-}
+} // end loop
 
 
 // CORE 1: Handles Hardware, Sensors, and Heavy Math
@@ -196,7 +208,7 @@ void setup1() {
 
 void loop1() {
   // put your main code here, to run repeatedly:
-  
+
   unsigned long now = millis(); // saves having to look up again
 
   // Iterate through your hardware array

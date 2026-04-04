@@ -9,6 +9,6 @@ const char* MQTT_SERVER = "192.168.1.XX";
 const int MQTT_PORT = 1883;
 
 // put the auth code here
-const char* AUTH_CODE = "1234"
+const char* AUTH_CODE = "1234";
 
 #endif
