@@ -9,12 +9,57 @@
 //    ESP cpp
 // ==========================================
 
+int readPWM(int pin) {
+  // Read the high pulse duration
+  highTime = pulseIn(pwmPin, HIGH);
+  // Read the low pulse duration
+  lowTime = pulseIn(pwmPin, LOW);
+  
+  period = highTime + lowTime;
+  dutyCycle = (highTime / period) * 100;
+
+  // Serial.print("Duty Cycle: ");
+  // Serial.print(dutyCycle);
+  // Serial.println("%");
+
+  return dutyCycle;
+}
+
+// analog pin
+int readAnalog(int pin, int ingore) {
+  return analogRead(pin);
+}
+
+int writeAnalog(int pin, int value){
+  return analogWrite(pin, value);
+}
+
+int writeDitigal(int pin, int value){
+  return digitalWrite(pin, value);
+}
+
+int readDitigal(int pin, int ingore){
+  return digitalRead(pin, value);
+}
+
+
+
+// write out 
+
 //  DATA STRUCTURE & QUEUE SETUP
 // Define the shape of the data you want to pass between cores
 typedef struct {
   int sensorValue;
+  int pin;
   unsigned long timestamp;
 } CoreMessage;
+
+typedef struct {
+  int pin;
+  // return_type (*FuncPtr) (parameter type, ....); 
+  int (*FuncPtr) (int, int)
+  unsigned long function_type;
+} pinObject;
 
 // Create the global queue so both cores can access it
 queue_t coreQueue;
@@ -104,6 +149,13 @@ void setup1() {
   
   // Setup hardware for Core 1 (e.g., I2C sensors, SPI devices)
   // Note: setup1() runs automatically alongside setup()
+
+  // speficty the PIN here. with pwnPin
+  // required for saying if a pin is reading or doing something else. 
+  pinMode(pwmPin, INPUT);
+  pinMode(pwmPin, INPUT);
+  pinMode(pwmPin, INPUT);
+  pinMode(pwmPin, INPUT);
 }
 
 void loop1() {
@@ -126,3 +178,21 @@ void loop1() {
   // TODO  remove when working
   delay(2000); 
 }
+
+int read(int pin) {
+  // Read the high pulse duration
+  highTime = pulseIn(pwmPin, HIGH);
+  // Read the low pulse duration
+  lowTime = pulseIn(pwmPin, LOW);
+  
+  period = highTime + lowTime;
+  dutyCycle = (highTime / period) * 100;
+
+  Serial.print("Duty Cycle: ");
+  Serial.print(dutyCycle);
+  Serial.println("%");
+}
+
+// reading analog
+// int sensorValue = analogRead(A0); A0 is pinout. 
+// will we see about multiplexing this?
