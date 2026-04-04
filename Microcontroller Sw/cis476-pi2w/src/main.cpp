@@ -9,12 +9,72 @@
 //    pico cpp
 // ==========================================
 
+
+// helpers for reading the Pinouts. will move to a headerfile later.
+int readPWM(int pin){
+  // missing defs
+  unsigned long highTime;
+  unsigned long lowTime;
+  unsigned long period;
+  float dutyCycle;
+
+  // Read the high pulse duration
+  highTime = pulseIn(pin, HIGH);
+  // Read the low pulse duration
+  lowTime = pulseIn(pin, LOW);
+  
+  period = highTime + lowTime;
+  dutyCycle = ((float)highTime / period) * 100;
+
+  // Serial.print("Duty Cycle: ");
+  // Serial.print(dutyCycle);
+  // Serial.println("%");
+
+  return (int)dutyCycle;
+}
+
+// analog pin
+int readAnalog(int pin) {
+  return analogRead(pin);
+}
+
+void writeAnalog(int pin, int value){
+  analogWrite(pin, value);
+}
+
+void writeDitigal(int pin, int value){
+  digitalWrite(pin, value);
+}
+
+int readDitigal(int pin){
+  return digitalRead(pin);
+}
+
 //  DATA STRUCTURE & QUEUE SETUP
 // Define the shape of the data you want to pass between cores
 typedef struct {
   int sensorValue;
+  int pin;
   unsigned long timestamp;
 } CoreMessage;
+
+// for knowing if input or putput.
+typedef enum { INPUT_PIN, OUTPUT_PIN } PinMode_t;
+
+typedef struct {
+  const char* label;
+  int pin;
+  PinMode_t mode;
+
+  int (*readFn)(int pin);
+  void (*writeFun) (int, int);
+  // return_type (*FuncPtr) (parameter type, ....); 
+
+  unsigned long function_type;  // 0 for input 1 for output
+  uint32_t interval; 
+  uint32_t lastCheck;
+  
+} PinObject;
 
 // Create the global queue so both cores can access it
 queue_t coreQueue;
@@ -25,7 +85,7 @@ PubSubClient client(picoClient);
 
 void reconnet() {
   // loop until we're reconnected for. Ideally not blockinf core one. 
-  while ((!cilent.connect())){
+  while ((!client.connected())){
     /* code */
     Serial.print("[Core 0] Attempting MQTT connection...");
     String clientId = "PicoClient-";
@@ -36,19 +96,11 @@ void reconnet() {
     } else {
       Serial.print("Failed, rc=");
       Serial.print(client.state());
-      serial.println(" trying again");
+      Serial.println(" trying again");
       delay(5000);
     }
   }
-  
 }
-
-
-//  WI-FI CONFIGURATION
-// i dont think having this in the main file is the startest way to do this tbh though.
-// const char* WIFI_SSID = "YOUR_WIFI_SSID"; 
-// const char* WIFI_PASS = "YOUR_WIFI_PASSWORD"; 
-
 
 // CORE 0: Handles Wi-Fi and MQTT
 
@@ -86,6 +138,7 @@ void loop() {
   client.loop();  // Important: Allows MQTT client to process incoming messages 
                   //and maintain connection
   
+  CoreMessage incomingMsg; 
   // Try to grab data from the queue
   if (queue_try_remove(&coreQueue, &incomingMsg)) {
     Serial.print("[Core 0] Data received from Core 1 -> Value: ");
@@ -112,17 +165,64 @@ void loop() {
 
 // CORE 1: Handles Hardware, Sensors, and Heavy Math
 
+PinObject myHardware[] = {
+    // label            pin  mode        readFn      writeFun  func_type  interval  lastCheck
+    {"pwm1",            34,  INPUT_PIN,  readAnalog, NULL,     0,         5000,     0}, 
+    {"pwm2",            35,  INPUT_PIN,  readAnalog, NULL,     0,         5000,     0}, 
+    {"digital input1",  36,  INPUT_PIN,  readDitigal,NULL,     0,         5000,     0}, 
+    {"digital input2",  37,  INPUT_PIN,  readDitigal,NULL,     0,         5000,     0}, 
+    {"digital output1", 38,  OUTPUT_PIN, NULL,       writeDitigal, 1,     5000,     0}, 
+    {"digital output2", 39,  OUTPUT_PIN, NULL,       writeDitigal, 1,     5000,     0}, 
+};
+
+// Calculate how many pins are in the array automatically
+const int PIN_COUNT = sizeof(myHardware) / sizeof(PinObject);
+
 void setup1() {
   // Setup hardware for Core 1 (e.g., I2C sensors, SPI devices)
   // Note: setup1() runs automatically alongside setup()
+
+  // speficty the PIN here. with pwnPin
+  // required for saying if a pin is reading or doing something else. 
+  // this just basically tells the code HEY WE WANT TO READ OR WRITE ON THESE
+  for (int i = 0; i < PIN_COUNT; i++) {
+        if (myHardware[i].function_type == 0) {
+            pinMode(myHardware[i].pin, INPUT);
+        } else {
+            pinMode(myHardware[i].pin, OUTPUT);
+        }
+    }
 }
 
 void loop1() {
-  //  Generate or read data
-  CoreMessage newMsg;
-  newMsg.sensorValue = random(0, 1024); // Simulating reading an ADC or Sensor
-  newMsg.timestamp = millis();
+  // put your main code here, to run repeatedly:
+  
+  unsigned long now = millis(); // saves having to look up again
 
+  // Iterate through your hardware array
+  for (int i = 0; i < PIN_COUNT; i++) {
+      
+      // Check if this pin is an INPUT and if it's time to read it
+      if (myHardware[i].function_type == 0 && (now - myHardware[i].lastCheck >= myHardware[i].interval)) {
+          
+          CoreMessage newMsg;
+          // Use your function pointer to read the data
+          newMsg.sensorValue = myHardware[i].readFn(myHardware[i].pin); 
+          newMsg.pin = myHardware[i].pin;
+          newMsg.timestamp = now;
+
+          if (queue_try_add(&coreQueue, &newMsg)) {
+            // Data successfully sent to Core 0
+          } 
+          
+          // Update the timer
+          myHardware[i].lastCheck = now;
+      }
+  }
+  
+  // A tiny delay just to prevent Core 1 from locking up the system completely
+  delay(1);
+/*
   //  Push data to the queue (non-blocking!)
   if (queue_try_add(&coreQueue, &newMsg)) {
     // Data successfully sent to Core 0
@@ -130,8 +230,5 @@ void loop1() {
     // The queue is full (Core 0 is busy). 
     // You can handle overflow/dropped packets here.
   }
-
-  // Simulate doing work every 2 seconds
-  // TODO  remove when working
-  delay(2000); 
+*/
 }
