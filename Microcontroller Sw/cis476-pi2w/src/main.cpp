@@ -33,6 +33,13 @@ int readPWM(int pin){
   return (int)dutyCycle;
 }
 
+// helpers for reading the Pinouts. will move to a headerfile later.
+void writePWM(int pin, float value){
+  // note that analogWrite() only works for pins somethimes idk
+  // TODO fix that please
+  analogWrite(pin, value);
+}
+
 // analog pin
 int readAnalog(int pin) {
   return analogRead(pin);
@@ -179,8 +186,8 @@ void loop() {
 
 PinObject myHardware[] = {
     // label            pin  mode        readFn      writeFun  func_type  interval  lastCheck
-    {"pwm1",            34,  INPUT_PIN,  readAnalog, NULL,     0,         5000,     0}, 
-    {"pwm2",            35,  INPUT_PIN,  readAnalog, NULL,     0,         5000,     0}, 
+    {"pwm1",            34,  INPUT_PIN,  NULL,       writeDitigal, 1,     5000,     0}, 
+    {"pwm2",            35,  INPUT_PIN,  NULL,       writeDitigal, 1,     5000,     0}, 
     {"digital input1",  36,  INPUT_PIN,  readDitigal,NULL,     0,         5000,     0}, 
     {"digital input2",  37,  INPUT_PIN,  readDitigal,NULL,     0,         5000,     0}, 
     {"digital output1", 38,  OUTPUT_PIN, NULL,       writeDitigal, 1,     5000,     0}, 
