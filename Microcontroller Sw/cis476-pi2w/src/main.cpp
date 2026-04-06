@@ -28,7 +28,7 @@ int readPWM(int pin){
 
   // Serial.print("Duty Cycle: ");
   // Serial.print(dutyCycle);
-  // Serial.println("%");
+  // Serial.println("%"); 
 
   return (int)dutyCycle;
 }
@@ -62,8 +62,7 @@ int readDitigal(int pin){
 typedef struct {
   int sensorValue;
   int pin;
-  unsigned long timestamp;
-} CoreMessage;
+  unsigned long timestamp} CoreMessage;
 
 // for knowing if input or putput.
 typedef enum { INPUT_PIN, OUTPUT_PIN } PinMode_t;
@@ -86,20 +85,40 @@ typedef struct {
 // Create the global queue so both cores can access it
 queue_t coreQueue;
 
+PinObject myHardware[] = {
+    // label            pin  mode        readFn      writeFun  func_type  interval  lastCheck
+    {"pwm1",            34,  OUTPUT_PIN, NULL,       writeDitigal, 1,     5000,     0}, 
+    {"pwm2",            35,  OUTPUT_PIN, NULL,       writeDitigal, 1,     5000,     0}, 
+    {"digital input1",  36,  INPUT_PIN,  readDitigal,NULL,     0,         5000,     0}, 
+    {"digital input2",  37,  INPUT_PIN,  readDitigal,NULL,     0,         5000,     0}, 
+    {"digital output1", 38,  OUTPUT_PIN, NULL,       writeDitigal, 1,     5000,     0}, 
+    {"digital output2", 39,  OUTPUT_PIN, NULL,       writeDitigal, 1,     5000,     0}, 
+};
+
 // MQTT SETUP 
 WiFiClient picoClient;
 PubSubClient client(picoClient);
 
-void reconnet() {
+String reconnet() {
   // loop until we're reconnected for. Ideally not blockinf core one. 
+  bool gate = true;
   while ((!client.connected())){
     /* code */
+    
     Serial.print("[Core 0] Attempting MQTT connection...");
     String clientId = "PicoClient-";
-    clientId += String(random(0xffff), HEX);
+    String IdGuess = String(random(0xffff), HEX);
+    clientId += IdGuess;
 
+    // hardcode a "02" first time
+    if (gate){
+      clientId = String("02");
+      gate = true;
+    }
+    
     if (client.connect(clientId.c_str())) {
       Serial.println("connected");
+      return IdGuess;
     } else {
       Serial.print("Failed, rc=");
       Serial.print(client.state());
@@ -109,6 +128,67 @@ void reconnet() {
   }
 }
 
+void connectToMqtt() {
+  Serial.print("[Core 0] Connecting to MQTT...");
+
+  // 1. Prepare the Disconnect/LWT Message [cite: 31, 32]
+  JsonDocument lwtDoc;
+  lwtDoc["ID"] = DEVICE_ID; 
+  lwtDoc["Device_Type"] = "Pico";
+  lwtDoc["Key"] = AUTH_CODE;
+  lwtDoc["Server_Command"] = "Disconnect";
+  char lwtBuffer[256];
+  serializeJson(lwtDoc, lwtBuffer);
+
+  // 2. Connect with Last Will (Topic, QoS=2, Retain=true, Message) [cite: 6, 8]
+  if (client.connect(DEVICE_ID, NULL, NULL, "Test/Server", 2, true, lwtBuffer)) {
+    Serial.println("connected");
+
+    // 3. Send the mandatory "Connect" message to the Server [cite: 9, 10]
+    JsonDocument connDoc;
+    connDoc["ID"] = DEVICE_ID;
+    connDoc["Device_Type"] = "Pico";
+    connDoc["Key"] = AUTH_CODE;
+    connDoc["Server_Command"] = "Connect";
+    
+    char connBuffer[256];
+    serializeJson(connDoc, connBuffer);
+    client.publish("Test/Server", connBuffer, 2); // Must be QoS 2 
+
+    // 4. Subscribe to the dedicated Pico topic [cite: 12]
+    // The server builds this as: Microcontroller/PICO/{ID}
+    String myTopic = "Microcontroller/PICO/" + String(DEVICE_ID);
+    client.subscribe(myTopic.c_str(), 2); 
+  }
+}
+
+void sendAllStates() {
+  JsonDocument doc;
+  doc["ID"] = DEVICE_ID;
+  doc["Device_Type"] = "Pico";
+  doc["Key"] = AUTH_CODE;
+  doc["Server_Command"] = "Send_Message";
+  doc["Client_Command"] = "Recieve State"; // Spelling matches classes.py logic
+
+  JsonObject message = doc.createNestedObject("Message");
+  
+  // Loop through hardware and add each pin value to the JSON
+  for (int i = 0; i < PIN_COUNT; i++) {
+    int val = 0;
+    if (myHardware[i].function_type == 0) { // INPUT
+      val = myHardware[i].readFn(myHardware[i].pin);
+    } else {
+      // For outputs, we'd ideally track the last set state 
+      // For now, we'll read the digital state or pulse state
+      val = digitalRead(myHardware[i].pin); 
+    }
+    message[myHardware[i].label] = val;
+  }
+
+  char buffer[512];
+  serializeJson(doc, buffer);
+  client.publish("Test/Server", buffer, 2); // QoS 2
+}
 // CORE 0: Handles Wi-Fi and MQTT
 
 void setup() {
@@ -135,6 +215,27 @@ void setup() {
   // setup mqtt
   client.setServer(MQTT_SERVER, MQTT_PORT);
 }
+
+void onMqttMessage(char* topic, byte* payload, unsigned int length) {
+    JsonDocument doc;
+    deserializeJson(doc, payload);
+
+    String command = doc["Client_Command"];
+
+    if (command == "Get State") {
+        // Respond with all pin states [cite: 18, 21]
+        sendAllStates();
+    } 
+    else if (command == "Set State") {
+        // Extract pin and value, then update hardware [cite: 26, 29]
+        int targetPin = doc["Message"]["Pin"];
+        int value = doc["Message"]["Value"];
+        updateHardware(targetPin, value);
+        sendAllStates(); // Respond with updated state [cite: 29]
+    }
+}
+
+
 
 void loop() {
   // stanity check the MQTT connection
@@ -183,16 +284,6 @@ void loop() {
 
 
 // CORE 1: Handles Hardware, Sensors, and Heavy Math
-
-PinObject myHardware[] = {
-    // label            pin  mode        readFn      writeFun  func_type  interval  lastCheck
-    {"pwm1",            34,  INPUT_PIN,  NULL,       writeDitigal, 1,     5000,     0}, 
-    {"pwm2",            35,  INPUT_PIN,  NULL,       writeDitigal, 1,     5000,     0}, 
-    {"digital input1",  36,  INPUT_PIN,  readDitigal,NULL,     0,         5000,     0}, 
-    {"digital input2",  37,  INPUT_PIN,  readDitigal,NULL,     0,         5000,     0}, 
-    {"digital output1", 38,  OUTPUT_PIN, NULL,       writeDitigal, 1,     5000,     0}, 
-    {"digital output2", 39,  OUTPUT_PIN, NULL,       writeDitigal, 1,     5000,     0}, 
-};
 
 // Calculate how many pins are in the array automatically
 const int PIN_COUNT = sizeof(myHardware) / sizeof(PinObject);

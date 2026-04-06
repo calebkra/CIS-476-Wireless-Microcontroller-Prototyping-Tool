@@ -10,5 +10,6 @@ const int MQTT_PORT = 1883;
 
 // put the auth code here
 const char* AUTH_CODE = "1234";
+const char* DEVICE_ID = "02";
 
 #endif
