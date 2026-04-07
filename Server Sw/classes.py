@@ -30,7 +30,8 @@ class connProxy:
         
     
     def authenticate(self,msg):
-        if msg['Key'] == self.AuthKey:
+        submittedKey = msg.get("Key")
+        if submittedKey == self.AuthKey:
             self.Connection.recieveMessage(msg)
         else:
             #add sending error code back to sender
@@ -60,6 +61,16 @@ class Pico(AbstractMicrocontroller):
     def sendMsg(self,msg):
         topic = f"Microcontroller/PICO/{self.ID}"
         self.Connection.sendMessage(topic,msg)
+
+class RpiZero(AbstractMicrocontroller):
+    def __init__(self,conn,id):
+        self.Connection = conn
+        self.ID = id
+        self.Device_Type = "RpiZero"
+    
+    def sendMsg(self,msg):
+        topic = f"Microcontroller/RPIZERO/{self.ID}"
+        self.Connection.sendMessage(topic,msg)
         
 
 class AbstractMicrocontrollerFactory(ABC):
@@ -78,6 +89,12 @@ class PicoFactory(AbstractMicrocontrollerFactory):
         self.Connection = conn
     def createMicrocontroller(self,id) -> AbstractMicrocontroller:
         return Pico(self.Connection,id)
+    
+class RpiZeroFactory(AbstractMicrocontrollerFactory):
+    def __init__(self, conn):
+        self.Connection = conn
+    def createMicrocontroller(self,id) -> AbstractMicrocontroller:
+        return RpiZero(self.Connection,id)
 
 class GUIFactory:
     def __init__(self,conn):
@@ -95,7 +112,7 @@ class GUI:
         topic = f"GUI/{self.ID}"
         self.Connection.sendMessage(topic,msg)    
 
-#Finish and Test this class
+
 class Mediator:
     microcontrollerList = list()
     GUIList = list()
@@ -110,30 +127,39 @@ class Mediator:
             currentMessage= self.Connection.getMessage()
             if currentMessage == None :
                 continue
+            
+            serverCommand = currentMessage.get("Server_Command",None)
+            deviceType = currentMessage.get("Device_Type",None)
 
-            if currentMessage["Server_Command"] == "Connect" :
+            if serverCommand == "Connect" :
                
-                if currentMessage["Device_Type"] == "GUI":
+                if deviceType == "GUI":
                     factoryGUI = self.Factories["GUI"]
-                    GUIinstance = factoryGUI.createGUI(currentMessage["ID"])
+                    GUIID = currentMessage.get("ID",None)
+                    GUIinstance = factoryGUI.createGUI(GUIID)
                     self.GUIList.append(GUIinstance)
                     GUIinstance.sendMsg(json.dumps({"ID":"Server", "Key":"1234","Client_Command":"Connection Success"}))
 
-                if currentMessage["Device_Type"] == "ESP32" or currentMessage["Device_Type"] == "Pico":
-                    if currentMessage["Device_Type"] == "ESP32":
+                if deviceType == "ESP32" or deviceType == "Pico" or deviceType == "RpiZero":
+                    if deviceType == "ESP32":
                         factoryMicrocontroller = self.Factories["ESP32"] 
-                    if currentMessage["Device_Type"] == "Pico":
+                    if deviceType == "Pico":
                         factoryMicrocontroller = self.Factories["Pico"]
-                   
-                    microcontrollerInstance = factoryMicrocontroller.createMicrocontroller(currentMessage["ID"])
+                    if deviceType == "RpiZero":
+                        factoryMicrocontroller = self.Factories["RpiZero"]
+                    
+                    MCID = currentMessage.get("ID",None)
+                    microcontrollerInstance = factoryMicrocontroller.createMicrocontroller(MCID)
                     self.microcontrollerList.append(microcontrollerInstance)
                     microcontrollerInstance.sendMsg(json.dumps({"ID":"Server", "Key":"1234","Client_Command":"Connection Success"}))
             
-            if currentMessage["Server_Command"] == "Bind" and currentMessage["Device_Type"] == "GUI":
+            if serverCommand == "Bind" and deviceType == "GUI":
+                GUIID = currentMessage.get("ID",None)
+                MCID = currentMessage.get("Message",None)
                 #find GUI instance first
                 for GUIinst in self.GUIList:
                     GUIinstance = GUIinst
-                    if GUIinst.ID == currentMessage["ID"]:
+                    if GUIinst.ID == GUIID:
                         break
                     else:
                         GUIinstance = None
@@ -142,7 +168,7 @@ class Mediator:
                     #find microcontroller instance
                     for microcontrollerInst in self.microcontrollerList:
                         microcontrollerInstance = microcontrollerInst
-                        if microcontrollerInst.ID == currentMessage["Message"]:
+                        if microcontrollerInst.ID == MCID:
                             break
                         else:
                             GUIinstance.sendMsg(json.dumps({"ID":"Server", "Key":"1234","Client_Command":"Bind Unsuccessful"}))
@@ -161,48 +187,53 @@ class Mediator:
                         GUIinstance.sendMsg(json.dumps({"ID":"Server", "Key":"1234","Client_Command":"Bind Successful"}))
                     print(self.microcontrollerGUIMapping)
                
-            if currentMessage["Server_Command"] == "Disconnect":
-                if currentMessage["Device_Type"] == "GUI":
-                    keyList = [key for key, val in self.microcontrollerGUIMapping.items() if currentMessage["ID"] in val]
+            if serverCommand == "Disconnect":
+                if deviceType == "GUI":
+                    GUIID = currentMessage.get("ID",None)
+                    keyList = [key for key, val in self.microcontrollerGUIMapping.items() if GUIID in val]
 
                     for key in keyList:
                         currList = self.microcontrollerGUIMapping[key]
-                        currList.remove(currentMessage["ID"])
+                        currList.remove(GUIID)
                         if not currList:
                             self.microcontrollerGUIMapping.pop(key,None)
                         else:
                             self.microcontrollerGUIMapping[key]=currList
 
-                if currentMessage["Device_Type"] == "ESP32" or currentMessage["Device_Type"] == "Pico":
-                    currList = self.microcontrollerGUIMapping.get(f"{currentMessage["ID"]}")
+                if deviceType == "ESP32" or deviceType == "Pico" or deviceType == "RpiZero":
+                    MCID = currentMessage.get("ID",None)
+                    currList = self.microcontrollerGUIMapping.get(f"{MCID}")
                     if currList:
                         for GUIid in currList:
                             for gui in self.GUIList:
                                 if gui.ID == GUIid:
                                     gui.sendMsg(json.dumps({"ID":"Server","Key":"1234", "Client_Command":"Microcontroller_Disconnect"}))
                     
-                        self.microcontrollerGUIMapping.pop(currentMessage["ID"])
+                        self.microcontrollerGUIMapping.pop(MCID)
             
-            if currentMessage["Server_Command"] == "Send_Message":
-                if currentMessage["Device_Type"] == "GUI":
+            if serverCommand == "Send_Message":
+                if deviceType == "GUI":
                     for microcontroller in self.microcontrollerList:
-                        if microcontroller.ID == currentMessage["Reciever_ID"]:
+                        RID = currentMessage.get("Reciever_ID",None)
+                        if microcontroller.ID == RID:
                             microcontroller.sendMsg(json.dumps(currentMessage))
-                if currentMessage["Device_Type"] == "ESP32" or currentMessage["Device_Type"] == "Pico":
-                    currList = self.microcontrollerGUIMapping[currentMessage["ID"]]
+                if deviceType == "ESP32" or deviceType == "Pico" or deviceType == "RpiZero":
+                    MCID = currentMessage.get("ID",None)
+                    currList = self.microcontrollerGUIMapping[MCID]
                     for guiId in currList:
                         for gui in self.GUIList:
                             if gui.ID == guiId:
                                 gui.sendMsg(json.dumps(currentMessage))
 
-            if currentMessage["Server_Command"] == "Get_Microcontrollers":
-                if currentMessage["Device_Type"] == "GUI":
+            if serverCommand == "Get_Microcontrollers":
+                if deviceType == "GUI":
                     idList = dict()
                     for microcontroller in self.microcontrollerList:
                       idList.update({f"{microcontroller.ID}":f"{microcontroller.Device_Type}"})
-                      
+
+                    GUIID = currentMessage.get("ID",None)  
                     for gui in self.GUIList:
-                        if gui.ID == currentMessage["ID"]:
+                        if gui.ID == GUIID:
                             gui.sendMsg(json.dumps({"ID":"Server", "Key":"1234", "Client_Command":"Recieve_Microcontrollers", "Message":f"{idList}"}))
 
         

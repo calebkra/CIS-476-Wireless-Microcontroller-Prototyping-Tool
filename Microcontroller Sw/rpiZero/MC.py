@@ -3,6 +3,8 @@ import json
 from abc import ABC, abstractmethod
 import pigpio
 
+#Add Proxy to connection to handle Authentication
+
 #Singleton class, however different from normal implimentation since python does not support private constructors
 class ConnectionHandler: 
     _instance = None
@@ -45,12 +47,13 @@ class ConnectionHandler:
     
     def __on_message(self,client, userdata, msg):
         msgJson = json.loads(msg.payload.decode('utf-8'))
-        if msgJson["Client_Command"] == "Connection Success":
+        clientCommand = msgJson.get("Client_Command",None)
+        if clientCommand == "Connection Success":
             self.Connected = True
-        if msgJson["Client_Command"] == "Set State":
-            msg = msgJson["Message"]
+        if clientCommand == "Set State":
+            msg = msgJson.get("Message")
             self.CurrentMC.setStates(msg)
-        if msgJson["Client_Command"] == "Get State":
+        if clientCommand == "Get State":
             self.CurrentMC.sendStates()
 
     def setActiveMC(self,currMC):
@@ -172,4 +175,11 @@ class microcontroller:
             binaryValue = 0
 
         self.pi.write(self.DigIn2PIN,binaryValue)
-        
+
+
+conn = ConnectionHandler()
+conn.connect("192.168.8.101",1883,"1234","M001")
+MC = microcontroller(connHandler=conn)
+
+while True:
+    pass
