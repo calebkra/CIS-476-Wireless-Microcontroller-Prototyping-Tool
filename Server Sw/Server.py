@@ -24,16 +24,19 @@ client.subscribe("Test/Server",qos=2)
 eFactory = classes.Esp32Factory(ConnectionInstance)
 pFactory = classes.PicoFactory(ConnectionInstance)
 gFactory = classes.GUIFactory(ConnectionInstance)
+rFactory = classes.RpiZeroFactory(ConnectionInstance)
 
 factoryDictionary = {
     "ESP32": eFactory,
     "Pico" : pFactory,
+    "RpiZero" : rFactory,
     "GUI" : gFactory
 }
 
 e1 = eFactory.createMicrocontroller("01")
 p1 = pFactory.createMicrocontroller("02")
 g1 = gFactory.createGUI("03")
+#may need to add r1 for RpiZero or remove three lines above
 
 mediator = classes.Mediator(ConnectionInstance,factoryDictionary)
 

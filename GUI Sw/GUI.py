@@ -5,6 +5,8 @@ from tkinter import ttk
 from abc import ABC, abstractmethod
 from tkinter import messagebox
 
+#Add Proxy to connection to handle Authentication
+
 #Singleton class, however different from normal implimentation since python does not support private constructors
 class ConnectionHandler: 
     _instance = None
@@ -47,20 +49,23 @@ class ConnectionHandler:
     
     def __on_message(self,client, userdata, msg):
         msgJson = json.loads(msg.payload.decode('utf-8'))
-        if msgJson["Client_Command"] == "Connection Success":
+        clientCommand = msgJson.get("Client_Command")
+        if clientCommand == "Connection Success":
             self.Connected = True
         if self.CurrentWindow.WindowID == "Connection Dashboard":
-            if msgJson["Client_Command"] == "Recieve_Microcontrollers":
+            if clientCommand == "Recieve_Microcontrollers":
                 microcontrollerDict = dict()
                 microcontrollerDict = eval(msgJson["Message"])
                 self.CurrentWindow.setMicrocontrollerCombobox(microcontrollerDict)
                 self.CurrentWindow.MCselectionFieldButton.state(['!disabled'])
-            if msgJson["Client_Command"] == "Bind Successful":
+            if clientCommand == "Bind Successful":
                 self.closeCurrentWindow() 
         else:
-            if msgJson["Client_Command"] == "Recieve State":
-                state = msgJson["Message"]
+            if clientCommand == "Recieve State":
+                state = msgJson.get("Message")
                 self.CurrentWindow.fillMCStates(state)   
+
+        #Add functionality to handle MC disconnect
             
 
     def setActiveWindow(self,currWindow):
@@ -324,10 +329,10 @@ class RpiZeroGUI(abstractMCDisplayGUI):
             pwmVal = self.setPWM1Entry.get()
             value = int(pwmVal)
 
-            if value > 100 or value < 0:
+            if value > 100 or value < -1:
                 raise ValueError
         except ValueError:
-            messagebox.showerror("Error","Please enter an integer between 1-100")
+            messagebox.showerror("Error","Please enter an integer between 0-100")
             return
 
         self.setMCStates("PWM1",value=value)
@@ -338,10 +343,10 @@ class RpiZeroGUI(abstractMCDisplayGUI):
             pwmVal = self.setPWM2Entry.get()
             value = int(pwmVal)
 
-            if value > 100 or value < 0:
+            if value > 100 or value < -1:
                 raise ValueError
         except ValueError:
-            messagebox.showerror("Error","Please enter an integer between 1-100")
+            messagebox.showerror("Error","Please enter an integer between 0-100")
             return
 
         self.setMCStates("PWM2",value=value)
@@ -415,7 +420,8 @@ class RpiZeroFactory(abstractGuiFactory):
     def createGUI(self, connectionHandler) ->abstractMCDisplayGUI:
         return RpiZeroGUI(connectionHandler)
         
-    
+
+#Add ESP32 and Pico concrete classes here
 
 
 
@@ -425,3 +431,4 @@ ConnWindow = ConnectionDashboard(conn)
 window=rpiFactory.createGUI(conn)
 window.runGUI()
 
+#in this block above modify to handle creation of different GUI creation based on MC Type
