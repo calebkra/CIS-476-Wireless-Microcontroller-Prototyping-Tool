@@ -24,7 +24,7 @@ class ConnectionHandler:
             self.MCType = "RpiZero"
 
     def connect(self,server_ip,port,server_key,mc_id):
-        self.SelfTopic = f"Microcontroller/{mc_id}"
+        self.SelfTopic = f"Microcontroller/RPIZERO/{mc_id}"
         self.Server_Key = server_key
         self.MCID = mc_id
         self.client = mqtt.Client()
@@ -48,13 +48,18 @@ class ConnectionHandler:
     def __on_message(self,client, userdata, msg):
         msgJson = json.loads(msg.payload.decode('utf-8'))
         clientCommand = msgJson.get("Client_Command",None)
+        print(f"Client_Command:{clientCommand}")
         if clientCommand == "Connection Success":
             self.Connected = True
         if clientCommand == "Set State":
+            print("Set State Reached")
             msg = msgJson.get("Message")
             self.CurrentMC.setStates(msg)
         if clientCommand == "Get State":
             self.CurrentMC.sendStates()
+            print("Get State Reached")
+            
+
 
     def setActiveMC(self,currMC):
         self.CurrentMC = currMC
@@ -75,8 +80,8 @@ class microcontroller:
 
         self.DigIn1State = "LOW"
         self.DigIn2State= "LOW"
-        self.DigOut1State = None
-        self.DigOut2State = None
+        self.DigOut1State = "LOW"
+        self.DigOut2State = "LOW"
         self.PWM1Duty = 0
         self.PWM2Duty = 0
 
@@ -123,7 +128,7 @@ class microcontroller:
 
     def sendStates(self):
         states = {"DI1":self.DigIn1State, "DI2":self.DigIn2State, "DO1":self.DigOut1State, "DO2":self.DigOut2State, "PWM1":self.PWM1Duty, "PWM2":self.PWM2Duty}
-        self.ConnectionHandler.sendMessage({"Client_Command":"Recieve State", "Message":states})
+        self.ConnectionHandler.sendMessage({"Server_Command":"Send_Message","Client_Command":"Recieve State", "Message":states})
 
     def setStates(self,msg):
         DO1 = msg.get("DO1",None)
@@ -138,10 +143,10 @@ class microcontroller:
             self.setDigitalOutput2(DO2)
 
         if PWM1 is not None:
-            self.setDigitalOutput1(PWM1)
+            self.setPWM1DutyCycle(PWM1)
 
         if PWM2 is not None:
-            self.setDigitalOutput1(PWM2)
+            self.setPWM2DutyCycle(PWM2)
 
 
 
@@ -165,7 +170,7 @@ class microcontroller:
         elif value == "LOW":
             binaryValue = 0
 
-        self.pi.write(self.DigIn1PIN,binaryValue)
+        self.pi.write(self.DigOut1PIN,binaryValue)
 
     def setDigitalOutput2(self,value):
         self.DigOut2State = value
@@ -174,7 +179,7 @@ class microcontroller:
         elif value == "LOW":
             binaryValue = 0
 
-        self.pi.write(self.DigIn2PIN,binaryValue)
+        self.pi.write(self.DigOut2PIN,binaryValue)
 
 
 conn = ConnectionHandler()
