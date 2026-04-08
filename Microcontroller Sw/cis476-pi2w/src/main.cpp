@@ -1,100 +1,62 @@
 #include <Arduino.h>
 #include <pico/util/queue.h>
 #include <WiFi.h>
-#include <PubSubClient.h>
+#include <PubSubClient.h> // TODO remove more QoS 2
+#include <AsyncMqttClient.h> // the QoS 2
 #include <ArduinoJson.h>
 #include "secrets.h" 
+#include "PicoController.h"
 
 // ==========================================
 //    pico cpp
 // ==========================================
 
+// --- Hardware Abstraction Layer ---
+// because why not! 
+#include "IController.h"
+#ifdef USE_PICO_CONTROLLER
+    #include "PicoController.h"
+    IController* myBoard = new PicoController();
+#else
+    #error "Define a board in platformio.ini!"
+#endif
 
-// helpers for reading the Pinouts. will move to a headerfile later.
-int readPWM(int pin){
-  // missing defs
-  unsigned long highTime;
-  unsigned long lowTime;
-  unsigned long period;
-  float dutyCycle;
-
-  // Read the high pulse duration
-  highTime = pulseIn(pin, HIGH);
-  // Read the low pulse duration
-  lowTime = pulseIn(pin, LOW);
-  
-  period = highTime + lowTime;
-  dutyCycle = ((float)highTime / period) * 100;
-
-  // Serial.print("Duty Cycle: ");
-  // Serial.print(dutyCycle);
-  // Serial.println("%"); 
-
-  return (int)dutyCycle;
-}
-
-// helpers for reading the Pinouts. will move to a headerfile later.
-void writePWM(int pin, float value){
-  // note that analogWrite() only works for pins somethimes idk
-  // TODO fix that please
-  analogWrite(pin, value);
-}
-
-// analog pin
-int readAnalog(int pin) {
-  return analogRead(pin);
-}
-
-void writeAnalog(int pin, int value){
-  analogWrite(pin, value);
-}
-
-void writeDitigal(int pin, int value){
-  digitalWrite(pin, value);
-}
-
-int readDitigal(int pin){
-  return digitalRead(pin);
-}
 
 //  DATA STRUCTURE & QUEUE SETUP
 // Define the shape of the data you want to pass between cores
 typedef struct {
   int sensorValue;
   int pin;
-  unsigned long timestamp} CoreMessage;
+  unsigned long timestamp
+} CoreMessage;
 
 // for knowing if input or putput.
 typedef enum { INPUT_PIN, OUTPUT_PIN } PinMode_t;
 
+// for moving away from function pointers 
+typedef enum { SIG_DIGITAL, SIG_ANALOG, SIG_PWM } SignalType_t;
+
 typedef struct {
   const char* label;
   int pin;
-  PinMode_t mode;
-
-  int (*readFn)(int pin);
-  void (*writeFun) (int, int);
-  // return_type (*FuncPtr) (parameter type, ....); 
-
-  unsigned long function_type;  // 0 for input 1 for output
+  PinMode_t mode;           // INPUT_PIN or OUTPUT_PIN
+  SignalType_t signalType;  // SIG_DIGITAL, SIG_ANALOG, or SIG_PWM
   uint32_t interval; 
   uint32_t lastCheck;
-  
 } PinObject;
 
 // Create the global queue so both cores can access it
 queue_t coreQueue;
 
 PinObject myHardware[] = {
-    // label            pin  mode        readFn      writeFun  func_type  interval  lastCheck
-    {"pwm1",            34,  OUTPUT_PIN, NULL,       writeDitigal, 1,     5000,     0}, 
-    {"pwm2",            35,  OUTPUT_PIN, NULL,       writeDitigal, 1,     5000,     0}, 
-    {"digital input1",  36,  INPUT_PIN,  readDitigal,NULL,     0,         5000,     0}, 
-    {"digital input2",  37,  INPUT_PIN,  readDitigal,NULL,     0,         5000,     0}, 
-    {"digital output1", 38,  OUTPUT_PIN, NULL,       writeDitigal, 1,     5000,     0}, 
-    {"digital output2", 39,  OUTPUT_PIN, NULL,       writeDitigal, 1,     5000,     0}, 
+    // label            pin  mode        signalType   interval  lastCheck
+    {"pwm1",            34,  OUTPUT_PIN, SIG_PWM,     5000,     0}, 
+    {"pwm2",            35,  OUTPUT_PIN, SIG_PWM,     5000,     0}, 
+    {"digital input1",  36,  INPUT_PIN,  SIG_DIGITAL, 5000,     0}, 
+    {"digital input2",  37,  INPUT_PIN,  SIG_DIGITAL, 5000,     0}, 
+    {"analog sensor",   26,  INPUT_PIN,  SIG_ANALOG,  5000,     0}, // unused analog bonus because I was here already
+    {"digital output1", 38,  OUTPUT_PIN, SIG_DIGITAL, 5000,     0}, 
 };
-
 // MQTT SETUP 
 WiFiClient picoClient;
 PubSubClient client(picoClient);
@@ -131,7 +93,7 @@ String reconnet() {
 void connectToMqtt() {
   Serial.print("[Core 0] Connecting to MQTT...");
 
-  // 1. Prepare the Disconnect/LWT Message [cite: 31, 32]
+  // Prepare the Disconnect/LWT Message
   JsonDocument lwtDoc;
   lwtDoc["ID"] = DEVICE_ID; 
   lwtDoc["Device_Type"] = "Pico";
@@ -140,11 +102,11 @@ void connectToMqtt() {
   char lwtBuffer[256];
   serializeJson(lwtDoc, lwtBuffer);
 
-  // 2. Connect with Last Will (Topic, QoS=2, Retain=true, Message) [cite: 6, 8]
+  // Connect with Last Will (Topic, QoS=2, Retain=true, Message)
   if (client.connect(DEVICE_ID, NULL, NULL, "Test/Server", 2, true, lwtBuffer)) {
     Serial.println("connected");
 
-    // 3. Send the mandatory "Connect" message to the Server [cite: 9, 10]
+    // Send the mandatory "Connect" message to the Server
     JsonDocument connDoc;
     connDoc["ID"] = DEVICE_ID;
     connDoc["Device_Type"] = "Pico";
@@ -155,9 +117,9 @@ void connectToMqtt() {
     serializeJson(connDoc, connBuffer);
     client.publish("Test/Server", connBuffer, 2); // Must be QoS 2 
 
-    // 4. Subscribe to the dedicated Pico topic [cite: 12]
+    // Subscribe to the dedicated Pico topic
     // The server builds this as: Microcontroller/PICO/{ID}
-    String myTopic = "Microcontroller/PICO/" + String(DEVICE_ID);
+    String myTopic = String(PubTopic) + String(DEVICE_ID);
     client.subscribe(myTopic.c_str(), 2); 
   }
 }
@@ -227,11 +189,11 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
         sendAllStates();
     } 
     else if (command == "Set State") {
-        // Extract pin and value, then update hardware [cite: 26, 29]
+        // Extract pin and value, then update hardware
         int targetPin = doc["Message"]["Pin"];
         int value = doc["Message"]["Value"];
         updateHardware(targetPin, value);
-        sendAllStates(); // Respond with updated state [cite: 29]
+        sendAllStates(); // Respond with updated state
     }
 }
 
@@ -305,32 +267,33 @@ void setup1() {
 }
 
 void loop1() {
-  // put your main code here, to run repeatedly:
+  unsigned long now = millis(); 
 
-  unsigned long now = millis(); // saves having to look up again
-
-  // Iterate through your hardware array
   for (int i = 0; i < PIN_COUNT; i++) {
       
-      // Check if this pin is an INPUT and if it's time to read it
-      if (myHardware[i].function_type == 0 && (now - myHardware[i].lastCheck >= myHardware[i].interval)) {
+      if (myHardware[i].mode == INPUT_PIN && (now - myHardware[i].lastCheck >= myHardware[i].interval)) {
           
           CoreMessage newMsg;
-          // Use your function pointer to read the data
-          newMsg.sensorValue = myHardware[i].readFn(myHardware[i].pin); 
           newMsg.pin = myHardware[i].pin;
           newMsg.timestamp = now;
 
-          if (queue_try_add(&coreQueue, &newMsg)) {
-            // Data successfully sent to Core 0
-          } 
-          
-          // Update the timer
+          // using enum instead of function pointers because its a little more clear. Also not a requried sry 😅
+          switch (myHardware[i].signalType) {
+              case SIG_DIGITAL:
+                  newMsg.sensorValue = myBoard->readDigital(myHardware[i].pin);
+                  break;
+              case SIG_ANALOG:
+                  newMsg.sensorValue = myBoard->readAnalog(myHardware[i].pin);
+                  break;
+              case SIG_PWM:
+                  newMsg.sensorValue = myBoard->readPWM(myHardware[i].pin);
+                  break;
+          }
+
+          queue_try_add(&coreQueue, &newMsg);
           myHardware[i].lastCheck = now;
       }
   }
-  
-  // A tiny delay just to prevent Core 1 from locking up the system completely
   delay(1);
 /*
   //  Push data to the queue (non-blocking!)
