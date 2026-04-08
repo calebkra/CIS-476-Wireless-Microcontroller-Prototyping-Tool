@@ -219,11 +219,12 @@ class Mediator:
                             microcontroller.sendMsg(json.dumps(currentMessage))
                 if deviceType == "ESP32" or deviceType == "Pico" or deviceType == "RpiZero":
                     MCID = currentMessage.get("ID",None)
-                    currList = self.microcontrollerGUIMapping[MCID]
-                    for guiId in currList:
-                        for gui in self.GUIList:
-                            if gui.ID == guiId:
-                                gui.sendMsg(json.dumps(currentMessage))
+                    currList = self.microcontrollerGUIMapping.get(MCID,None)
+                    if currList :
+                        for guiId in currList:
+                            for gui in self.GUIList:
+                                if gui.ID == guiId:
+                                    gui.sendMsg(json.dumps(currentMessage))
 
             if serverCommand == "Get_Microcontrollers":
                 if deviceType == "GUI":

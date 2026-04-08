@@ -10,7 +10,7 @@ def on_message(client, userdata, msg):
 
 client = mqtt.Client()
 client.on_message = on_message
-client.connect('127.0.0.1', 1883)
+client.connect('192.168.8.101', 1883)
 
 #msgQueue = Queue()
 ConnectionInstance = classes.Connection(client)
