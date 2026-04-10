@@ -13,6 +13,7 @@
 
 // --- Hardware Abstraction Layer ---
 // because why not! 
+// as of now this is just an interface for the other board
 #include "IController.h"
 #ifdef USE_PICO_CONTROLLER
     #include "PicoController.h"
@@ -185,7 +186,7 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
     String command = doc["Client_Command"];
 
     if (command == "Get State") {
-        // Respond with all pin states [cite: 18, 21]
+        // Respond with all pin states
         sendAllStates();
     } 
     else if (command == "Set State") {
