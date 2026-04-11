@@ -12,6 +12,6 @@ const int MQTT_PORT = 1883;
 const char* AUTH_CODE = "1234";
 const char* DEVICE_ID = "02";
 // publish topics. 
-const char* PubTopic  = "async-mqtt/ESP32_Pub";
+const char* SUB_TOPIC_PREFIX  = "Microcontroller/PICO/";
 
 #endif
