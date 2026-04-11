@@ -10,10 +10,17 @@ import time
 SERVER_TOPIC = "Test/Server"
 
 
-#Add Proxy to connection to handle Authentication
 
+#Proxy and Singleton design pattern
+#This proxy handles authentication of all in coming messages, if authenticated messages are forwarded to the on_message handler
+#in the connection class, If not alerts user key is incorrect
 class authenticationProxy:
-    def __init__(self,conn):
+    def __new__(cls, *args, **kwargs):
+        if not hasattr(cls, 'inst'):
+            cls.inst = super().__new__(cls)
+            return cls.inst
+        
+    def initialize(self,conn):
         self.ConnectionHandler = conn
         self.ConnectionHandler.setProxy(self.on_message)
 
@@ -62,9 +69,11 @@ class ConnectionHandler:
             self.MCID = None
             self.MCType = None
 
+    #sets the proxy on_message handler so it can be set when MQTT client is intitalized
     def setProxy(self,proxyOnMessage):
         self.ProxyOnMessage = proxyOnMessage
 
+    #Initalizes the MQTT client, connects to the MQTT broker, and subscribes to the GUI's unique topic
     def connect(self,server_ip,port,server_key,gui_id):
         self.SelfTopic = f"GUI/{gui_id}"
         self.Server_Key = server_key
@@ -78,15 +87,19 @@ class ConnectionHandler:
         #need to send connect message here
         self.client.publish(self.ServerTopic,json.dumps({"ID":f"{self.GUIID}","Device_Type":"GUI","Key":f"{self.Server_Key}","Server_Command":"Connect"}),qos=2)
 
+    #Sends message to the server, appends certain header information that the server will use
     def sendMessage(self,msg):
         #finish send messages
         header = {"ID":f"{self.GUIID}","Key":f"{self.Server_Key}","Device_Type":"GUI"}
         finalmsg = header | msg 
         self.client.publish(self.ServerTopic,json.dumps(finalmsg),qos=2)
         
+    #returns true if the GUI is successfully connected to server
+    #returns false if the GUI is not connected to the server
     def isConnected(self):
         return self.Connected
     
+    #on_message handler for the mqtt client, controls/manipulates the GUI instance when desired messages come in
     def on_message(self,client, userdata, msg):
         msgJson = json.loads(msg.payload.decode('utf-8'))
         clientCommand = msgJson.get("Client_Command")
@@ -111,14 +124,16 @@ class ConnectionHandler:
 
         #Add functionality to handle MC disconnect
             
-
+    #sets connections class current active window so it can take action on recieved messages
     def setActiveWindow(self,currWindow):
         self.CurrentWindow = currWindow
 
+    #sets the current microcontroller ID and type of the MC the GUI is connected to 
     def setActiveMC(self, id, mctype):
         self.MCID = id
         self.MCType = mctype
 
+    #returns the MC ID and type of the current MC the GUI is 
     def getActiveMC(self):
         return self.MCID,self.MCType
 
@@ -234,16 +249,19 @@ class ConnectionDashboard:
         #on message will handle the call to teardown this window and open new window
         #upon reciept of successful binding 
 
+    #Handles closing the GUI window
     def closeWindow(self):
         
         if self.terminated == False:
             self.terminated = True
             self.ConnWindow.after(0,self.ConnWindow.destroy)
-        #self.ConnWindow.destroy()
-
+    
+    #displays error messagebox with the message passed in
     def showError(self,errorMessage):
         messagebox.showerror("Error",errorMessage)
 
+
+#Abstract GUI class that is the abstract product that will be in the abstract factory
 class abstractMCDisplayGUI(ABC):
     #will send new state for pin to MC for the MC to manipulate pin state accordingly
     @abstractmethod
@@ -260,7 +278,9 @@ class abstractMCDisplayGUI(ABC):
     def runGUI(self):
         pass
 
+#Concrete GUI Class for Raspberry Pi Zero
 class RpiZeroGUI(abstractMCDisplayGUI):
+    #initalizes class
     def __init__(self,connectionHandler):
         self.WindowID = "RpiZero Dashboard"
         self.ConnectionHandler = connectionHandler
@@ -270,6 +290,7 @@ class RpiZeroGUI(abstractMCDisplayGUI):
         self.delayInterval = 50
         self.terminated = False
     
+    #sets up the layout of the GUI and runs the GUI
     def runGUI(self):
         self.Window = tk.Tk()
         self.Window.geometry(newGeometry="680x360")
@@ -364,11 +385,14 @@ class RpiZeroGUI(abstractMCDisplayGUI):
         self.setPWM2Button = tk.Button(self.frame, text="Set",width=10, relief="groove", command=self.setPWM2Val)
         self.setPWM2Button.grid(row=6,column=4,pady=self.ypad)
 
+        #places UI elements into window
         self.frame.pack(fill="x",expand=False)
+        
+        #starts execution
         self.Window.mainloop()
         
         
-    #button conmmand methods that will forward pin and value to set MC states
+    #button command methods that will forward pin and value to set MC states
 
     def setDigOut1Val(self):
         val = self.setDigOut1Combobox.get()
@@ -459,25 +483,28 @@ class RpiZeroGUI(abstractMCDisplayGUI):
             if currentPWM2 != newPWM2:
                 self.PWM2State.config(text=str(newPWM2))
 
-    
+    #sends message to server then MC requesting MC current states
     def getMCStates(self):
         self.ConnectionHandler.sendMessage({"Server_Command":"Send_Message","Reciever_ID":self.MCID,"Client_Command":"Get State"})
 
+    #closes the GUI window
     def closeWindow(self):
-        
         if self.terminated == False:
             self.terminated = True
             self.ConnWindow.after(0,self.ConnWindow.destroy)
 
-class RpiPicoGUI(abstractMCDisplayGUI):
+#Concrete GUI class for Raspberry Pi Pico
+class RpiPicoGUI(abstractMCDisplayGUI): #initalizes class
     def __init__(self,connectionHandler):
-        self.WindowID = "RpiPico Dashboard"
+        self.WindowID = "Pico Dashboard"
         self.ConnectionHandler = connectionHandler
         self.ConnectionHandler.setActiveWindow(self)
         MC = self.ConnectionHandler.getActiveMC()
         self.MCID = MC[0]
         self.delayInterval = 50
+        self.terminated = False
     
+    #sets up the layout of the GUI and runs the GUI
     def runGUI(self):
         self.Window = tk.Tk()
         self.Window.geometry(newGeometry="680x360")
@@ -572,11 +599,14 @@ class RpiPicoGUI(abstractMCDisplayGUI):
         self.setPWM2Button = tk.Button(self.frame, text="Set",width=10, relief="groove", command=self.setPWM2Val)
         self.setPWM2Button.grid(row=6,column=4,pady=self.ypad)
 
+        #places UI elements into window
         self.frame.pack(fill="x",expand=False)
+        
+        #starts execution
         self.Window.mainloop()
         
         
-    #button conmmand methods that will forward pin and value to set MC states
+    #button command methods that will forward pin and value to set MC states
 
     def setDigOut1Val(self):
         val = self.setDigOut1Combobox.get()
@@ -661,18 +691,25 @@ class RpiPicoGUI(abstractMCDisplayGUI):
 
         if newPWM1 != "None":
             if currentPWM1 != newPWM1:
-                self.PWM1State.config(text=newPWM1)
+                self.PWM1State.config(text=str(newPWM1))
         
         if newPWM2 != "None":
             if currentPWM2 != newPWM2:
-                self.PWM2State.config(text=newPWM2)
+                self.PWM2State.config(text=str(newPWM2))
 
-    
+    #sends message to server then MC requesting MC current states
     def getMCStates(self):
         self.ConnectionHandler.sendMessage({"Server_Command":"Send_Message","Reciever_ID":self.MCID,"Client_Command":"Get State"})
 
-
+    #closes the GUI window
+    def closeWindow(self):
+        if self.terminated == False:
+            self.terminated = True
+            self.ConnWindow.after(0,self.ConnWindow.destroy)
+   
+#Concrete GUI class for ESP32
 class ESP32GUI(abstractMCDisplayGUI):
+     #initalizes class
     def __init__(self,connectionHandler):
         self.WindowID = "ESP32 Dashboard"
         self.ConnectionHandler = connectionHandler
@@ -680,7 +717,9 @@ class ESP32GUI(abstractMCDisplayGUI):
         MC = self.ConnectionHandler.getActiveMC()
         self.MCID = MC[0]
         self.delayInterval = 50
+        self.terminated = False
     
+    #sets up the layout of the GUI and runs the GUI
     def runGUI(self):
         self.Window = tk.Tk()
         self.Window.geometry(newGeometry="680x360")
@@ -775,11 +814,14 @@ class ESP32GUI(abstractMCDisplayGUI):
         self.setPWM2Button = tk.Button(self.frame, text="Set",width=10, relief="groove", command=self.setPWM2Val)
         self.setPWM2Button.grid(row=6,column=4,pady=self.ypad)
 
+        #places UI elements into window
         self.frame.pack(fill="x",expand=False)
+        
+        #starts execution
         self.Window.mainloop()
         
         
-    #button conmmand methods that will forward pin and value to set MC states
+    #button command methods that will forward pin and value to set MC states
 
     def setDigOut1Val(self):
         val = self.setDigOut1Combobox.get()
@@ -864,22 +906,30 @@ class ESP32GUI(abstractMCDisplayGUI):
 
         if newPWM1 != "None":
             if currentPWM1 != newPWM1:
-                self.PWM1State.config(text=newPWM1)
+                self.PWM1State.config(text=str(newPWM1))
         
         if newPWM2 != "None":
             if currentPWM2 != newPWM2:
-                self.PWM2State.config(text=newPWM2)
+                self.PWM2State.config(text=str(newPWM2))
 
-    
+    #sends message to server then MC requesting MC current states
     def getMCStates(self):
         self.ConnectionHandler.sendMessage({"Server_Command":"Send_Message","Reciever_ID":self.MCID,"Client_Command":"Get State"})
 
+    #closes the GUI window
+    def closeWindow(self):
+        if self.terminated == False:
+            self.terminated = True
+            self.ConnWindow.after(0,self.ConnWindow.destroy)
 
+
+#Abstract Factory for GUI Creation
 class abstractGuiFactory(ABC):
     @abstractmethod
     def createGUI(self,connectionHandler) -> abstractMCDisplayGUI:
         pass
 
+#Concrete factory for creating GUI instances for Raspberry Pi Zero
 class RpiZeroFactory(abstractGuiFactory):
     def __init__(self):
         self.FactoryID = "RpiZero"
@@ -888,6 +938,7 @@ class RpiZeroFactory(abstractGuiFactory):
     def createGUI(self, connectionHandler) ->abstractMCDisplayGUI:
         return RpiZeroGUI(connectionHandler)
 
+#Concrete Factory for creating GUI instances for Raspberry Pi Pico
 class RpiPicoFactory(abstractGuiFactory):
     def __init__(self):
         self.FactoryID = "RpiPico"
@@ -896,6 +947,7 @@ class RpiPicoFactory(abstractGuiFactory):
     def createGUI(self, connectionHandler) ->abstractMCDisplayGUI:
         return RpiPicoGUI(connectionHandler)
 
+#Concrete Factory for creating GUI instances for ESP32
 class ESP32Factory(abstractGuiFactory):
     def __init__(self):
         self.FactoryID = "ESP32"
@@ -904,23 +956,25 @@ class ESP32Factory(abstractGuiFactory):
     def createGUI(self, connectionHandler) ->abstractMCDisplayGUI:
         return ESP32GUI(connectionHandler)        
 
-#Add ESP32 and Pico concrete classes here
 
 
-
-
-
+#create connection and proxy instances
 conn = ConnectionHandler()
-proxy = authenticationProxy(conn=conn)
+proxy = authenticationProxy()
+proxy.initialize(conn=conn)
 
+
+#create factories and dictionary of factories to help create new GUI instances when needed 
 rpiZFactory = RpiZeroFactory()
 rpiPFactory = RpiPicoFactory()
 espFactory = ESP32Factory()
-
 factoryDict={"RpiZero":rpiZFactory, "Pico":rpiPFactory, "ESP32":espFactory}
 
+#create initial connection window
 ConnWindow = ConnectionDashboard(conn)
 
+
+#create new window once connection window closes
 newWindowInfo = conn.getActiveMC()
 newWindowType = newWindowInfo[1]
 
@@ -930,4 +984,3 @@ if newWindowType:
         newWindow = factory.createGUI(conn)
         newWindow.runGUI()
 
-#in this block above modify to handle creation of different GUI creation based on MC Type
