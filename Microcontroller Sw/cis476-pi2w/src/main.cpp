@@ -193,7 +193,7 @@ void onMqttMessage(char* topic, byte* payload, unsigned int length) {
         // Extract pin and value, then update hardware
         int targetPin = doc["Message"]["Pin"];
         int value = doc["Message"]["Value"];
-        updateHardware(targetPin, value);
+        updateHardware(targetPin, value); // when did this make it here 😭😭
         sendAllStates(); // Respond with updated state
     }
 }
