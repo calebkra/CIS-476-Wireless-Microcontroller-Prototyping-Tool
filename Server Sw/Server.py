@@ -4,22 +4,28 @@ import json
 import classes
 
 
+#Constants
+SERVER_IP = '192.168.8.101'
+PORT = 1883
+SERVER_TOPIC = "Test/Server"
+SERVER_KEY = "1234"
+
 def on_message(client, userdata, msg):
     msgJson = json.loads(msg.payload.decode('utf-8'))
     ProxyInstance.authenticate(msgJson)
 
 client = mqtt.Client()
 client.on_message = on_message
-client.connect('192.168.8.101', 1883)
+client.connect(SERVER_IP, PORT)
 
 #msgQueue = Queue()
 ConnectionInstance = classes.Connection(client)
-ProxyInstance = classes.connProxy("1234",ConnectionInstance)
+ProxyInstance = classes.connProxy(SERVER_KEY,ConnectionInstance)
 
 client.loop_start()
 
 #subscribe to server topic to listen to incoming messages
-client.subscribe("Test/Server",qos=2)
+client.subscribe(SERVER_TOPIC,qos=2)
 
 eFactory = classes.Esp32Factory(ConnectionInstance)
 pFactory = classes.PicoFactory(ConnectionInstance)

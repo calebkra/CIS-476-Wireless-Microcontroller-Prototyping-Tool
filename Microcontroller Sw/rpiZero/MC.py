@@ -3,7 +3,45 @@ import json
 from abc import ABC, abstractmethod
 import pigpio
 
+#Constants
+SERVER_IP = '192.168.8.101'
+PORT = 1883
+SERVER_KEY = "1234"
+MICROCONTROLLER_ID = "M001"
+MICROCONTROLLER_TYPE = "RpiZero"
+SERVER_TOPIC = "Test/Server"
+
 #Add Proxy to connection to handle Authentication
+
+class authenticationProxy:
+    def __init__(self,conn):
+        self.ConnectionHandler = conn 
+        self.ConnectionHandler.setOnMessage(self.on_message)
+
+    def on_message(self,client, userdata, msg):
+        Message = json.loads(msg.payload.decode('utf-8'))
+
+        client_command = Message.get("Client_Command", None)
+        if client_command and client_command == "Invalid Key":
+            print("Invalid Server Key")
+            return
+
+        id = Message.get("ID",None)
+
+        if id and id == "Server":
+            key = Message.get("Key",None)
+            if key:
+                self.setKey(key)
+
+        attemptedKey = Message.get("Key")
+
+        if attemptedKey and self.Key and attemptedKey == self.Key:
+            self.ConnectionHandler.on_message(client,userdata,msg)
+        
+
+    def setKey(self, key):
+        self.Key = key    
+
 
 #Singleton class, however different from normal implimentation since python does not support private constructors
 class ConnectionHandler: 
@@ -18,18 +56,19 @@ class ConnectionHandler:
         if not hasattr(self, '_initialized'):
             self.value = initial_value
             self._initialized = True 
-            self.ServerTopic = "Test/Server"
+            self.ServerTopic = SERVER_TOPIC
             self.Connected = False
             self.MCID = None
-            self.MCType = "RpiZero"
+            self.MCType = MICROCONTROLLER_TYPE
+            self.proxyOnMessage = None
 
     def connect(self,server_ip,port,server_key,mc_id):
         self.SelfTopic = f"Microcontroller/RPIZERO/{mc_id}"
         self.Server_Key = server_key
         self.MCID = mc_id
         self.client = mqtt.Client()
-        self.client.on_message = self.__on_message
-        self.client.will_set("Test/Server",json.dumps({"ID":mc_id,"Key":server_key,"Device_Type":self.MCType,"Server_Command":"Disconnect"}),qos=2)
+        self.client.on_message = self.proxyOnMessage
+        self.client.will_set(self.ServerTopic,json.dumps({"ID":mc_id,"Key":server_key,"Device_Type":self.MCType,"Server_Command":"Disconnect"}),qos=2)
         self.client.connect(server_ip, port)
         self.client.subscribe(self.SelfTopic,qos=2)
         self.client.loop_start()
@@ -45,7 +84,7 @@ class ConnectionHandler:
     def isConnected(self):
         return self.Connected
     
-    def __on_message(self,client, userdata, msg):
+    def on_message(self,client, userdata, msg):
         msgJson = json.loads(msg.payload.decode('utf-8'))
         clientCommand = msgJson.get("Client_Command",None)
         print(f"Client_Command:{clientCommand}")
@@ -63,6 +102,10 @@ class ConnectionHandler:
 
     def setActiveMC(self,currMC):
         self.CurrentMC = currMC
+
+    def setOnMessage(self,onmsg):
+        self.proxyOnMessage = onmsg
+
 
 class microcontroller:
     def __init__(self,connHandler):
@@ -155,7 +198,7 @@ class microcontroller:
         self.pi.hardware_PWM(self.PWM1PIN,self.PWMFreq,dutyValue*10000)
 
     def setPWM2DutyCycle(self,dutyValue):
-        self.PWM1Duty = dutyValue
+        self.PWM2Duty = dutyValue
         self.pi.hardware_PWM(self.PWM2PIN,self.PWMFreq,dutyValue*10000)
 
     def setPWMFrequency(self, freq):
@@ -183,7 +226,8 @@ class microcontroller:
 
 
 conn = ConnectionHandler()
-conn.connect("192.168.8.101",1883,"1234","M001")
+proxy = authenticationProxy(conn=conn)
+conn.connect(SERVER_IP,PORT,SERVER_KEY,MICROCONTROLLER_ID)
 MC = microcontroller(connHandler=conn)
 
 while True:
