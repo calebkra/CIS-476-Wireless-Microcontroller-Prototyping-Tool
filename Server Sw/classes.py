@@ -34,7 +34,14 @@ class connProxy:
         if submittedKey == self.AuthKey:
             self.Connection.recieveMessage(msg)
         else:
-            #add sending error code back to sender
+            id = msg.get("ID")
+            device_type = msg.get("Device_Type")
+            if device_type == "GUI":
+                topic = f"GUI/{id}"
+            else:
+                topic = f"Microcontroller/{device_type.upper()}/{id}"
+
+            self.Connection.sendMessage(topic,json.dumps({"ID":"Server","Key":self.AuthKey,"Client_Command":"Invalid Key"}))
             print("Wrong Authentication Code")
 
 class AbstractMicrocontroller(ABC):
