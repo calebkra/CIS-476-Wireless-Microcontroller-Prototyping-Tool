@@ -50,12 +50,12 @@ queue_t coreQueue;
 // {"DO1":(value), "DO2": (value), "DI1": (value), "DI2": (value), "PWM1": (value), "PWM2":(value)}
 // this was chat's Idea after a code review idk why. 
 PinObject myHardware[] = {
-    {"PWM1",  34,  OUTPUT_PIN, SIG_PWM,     5000, 0}, 
-    {"PWM2",  35,  OUTPUT_PIN, SIG_PWM,     5000, 0}, 
+    {"PWM1",  8,  OUTPUT_PIN, SIG_PWM,     5000, 0}, 
+    {"PWM2",  9,  OUTPUT_PIN, SIG_PWM,     5000, 0}, 
     {"DI1",   36,  INPUT_PIN,  SIG_DIGITAL, 5000, 0}, 
     {"DI2",   37,  INPUT_PIN,  SIG_DIGITAL, 5000, 0}, 
-    {"DO1",   38,  OUTPUT_PIN, SIG_DIGITAL, 5000, 0},
-    {"DO2",   39,  OUTPUT_PIN, SIG_DIGITAL, 5000, 0} // Added to match rubric
+    {"DO1",   6,  OUTPUT_PIN, SIG_DIGITAL, 5000, 0},
+    {"DO2",   7,  OUTPUT_PIN, SIG_DIGITAL, 5000, 0} // Added to match rubric
 };
 
 // Calculate how many pins are in the array automatically
@@ -105,16 +105,41 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
         sendAllStates();
     } 
     else if (command == "Set State") {
-        String targetPinLabel = doc["Message"]["Pin"];
-        int value = doc["Message"]["Value"];
+        //String targetPinLabel = doc["Message"]["Pin"];
+        //int value = doc["Message"]["Value"];
         
+          JsonObject msg = doc["Message"].as<JsonObject>();
+
+          String targetPinLabel;
+          String valueString;
+          for (JsonPair kv : msg) {
+            const char* pinChar = kv.key().c_str();
+            const char* valueChar = kv.value().as<const char*>();
+
+            targetPinLabel = String(pinChar);
+            valueString = String(valueChar);
+          }
+
+          int value;
+
+          if(valueString == "HIGH"){
+            value = 1;
+          }
+          else if (valueString == "LOW"){
+            value = 0;
+          } else{
+            value = valueString.toInt();
+          }
+    
         // Find the pin by label and update it
         for(int i=0; i<PIN_COUNT; i++) {
             if(String(myHardware[i].label) == targetPinLabel) {
                 if(myHardware[i].signalType == SIG_PWM) {
                     analogWrite(myHardware[i].pin, value);
                 } else {
-                    digitalWrite(myHardware[i].pin, value > 0 ? HIGH : LOW);
+                    //digitalWrite(myHardware[i].pin, value > 0 ? HIGH : LOW);
+                    digitalWrite(myHardware[i].pin, value);
+                    //Serial.printf("\nSet State:%s Value:%i\n",targetPinLabel,value);                
                 }
                 break;
             }
@@ -178,7 +203,7 @@ void setup() {
   MQTT& mqtt = MQTT::getInstance();
   mqtt.setup(MQTT_SERVER, MQTT_PORT);
   mqtt.setClientId(DEVICE_ID);
-  mqtt.setWill("Test/Server", 2, true, lwtBuffer);
+  mqtt.setWill("Test/Server", 2, false, lwtBuffer);
   
   mqtt.onConnect(onMqttConnect);
   mqtt.onDisconnect(onMqttDisconnect);
@@ -197,9 +222,10 @@ void loop() {
     // Serial.print(incomingMsg.pin);
     // Serial.print(" | Value: ");
     // Serial.println(incomingMsg.sensorValue);
-    Serial.println("MQTT Publish Success!");
+    
+    //Serial.println("MQTT Publish Success!");
   } else {
-    Serial.println("MQTT Publish Failed.");
+    //Serial.println("MQTT Publish Failed.");
   }
   // Core 0 handles other non-blocking network tasks here
   // e.g., checking for incoming socket clients
@@ -218,7 +244,7 @@ void setup1() {
         if (myHardware[i].mode == INPUT_PIN) {
             pinMode(myHardware[i].pin, INPUT);
         } else {
-            pinMode(myHardware[i].pin, OUTPUT);
+            pinMode(myHardware[i].pin, OUTPUT_12MA);
         }
     }
 }
