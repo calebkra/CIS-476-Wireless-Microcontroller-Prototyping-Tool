@@ -119,7 +119,7 @@ class ConnectionHandler:
                 self.CurrentWindow.fillMCStates(state)
 
             if clientCommand == "Microcontroller_Disconnect":
-                self.CurrentWindow.messagebox.showerror("Microcontroller disconnected, program now closing")
+                self.CurrentWindow.showError("Microcontroller disconnected, program now closing")
                 self.closeCurrentWindow()   
 
         #Add functionality to handle MC disconnect
@@ -487,6 +487,10 @@ class RpiZeroGUI(abstractMCDisplayGUI):
     def getMCStates(self):
         self.ConnectionHandler.sendMessage({"Server_Command":"Send_Message","Reciever_ID":self.MCID,"Client_Command":"Get State"})
 
+    #displays error messagebox with the message passed in
+    def showError(self,errorMessage):
+        messagebox.showerror("Error",errorMessage)
+
     #closes the GUI window
     def closeWindow(self):
         if self.terminated == False:
@@ -701,11 +705,17 @@ class RpiPicoGUI(abstractMCDisplayGUI): #initalizes class
     def getMCStates(self):
         self.ConnectionHandler.sendMessage({"Server_Command":"Send_Message","Reciever_ID":self.MCID,"Client_Command":"Get State"})
 
+
+    #displays error messagebox with the message passed in
+    def showError(self,errorMessage):
+        messagebox.showerror("Error",errorMessage)
+
+
     #closes the GUI window
     def closeWindow(self):
         if self.terminated == False:
             self.terminated = True
-            self.ConnWindow.after(0,self.ConnWindow.destroy)
+            self.Window.after(0,self.Window.destroy)
    
 #Concrete GUI class for ESP32
 class ESP32GUI(abstractMCDisplayGUI):
@@ -916,11 +926,15 @@ class ESP32GUI(abstractMCDisplayGUI):
     def getMCStates(self):
         self.ConnectionHandler.sendMessage({"Server_Command":"Send_Message","Reciever_ID":self.MCID,"Client_Command":"Get State"})
 
+    #displays error messagebox with the message passed in
+    def showError(self,errorMessage):
+        messagebox.showerror("Error",errorMessage)
+
     #closes the GUI window
     def closeWindow(self):
         if self.terminated == False:
             self.terminated = True
-            self.ConnWindow.after(0,self.ConnWindow.destroy)
+            self.Window.after(0,self.Window.destroy)
 
 
 #Abstract Factory for GUI Creation
