@@ -17,7 +17,8 @@ def on_message(client, userdata, msg):
     ProxyInstance.authenticate(msgJson)
 
 #initalizes the mqtt client
-client = mqtt.Client()
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1) 
+# OR use VERSION2 if you plan to update your callback signatures
 client.on_message = on_message
 client.connect(SERVER_IP, PORT)
 
