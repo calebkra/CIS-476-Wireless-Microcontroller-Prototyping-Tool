@@ -3,7 +3,7 @@
 #include <WiFi.h>
 #include <ArduinoJson.h>
 #include "secrets.h" 
-#include "MQTT.h"
+#include "MQTT_Controller.h"
 // ==========================================
 //    pico cpp
 // ==========================================
@@ -71,7 +71,7 @@ void sendAllStates() {
   doc["Server_Command"] = "Send_Message";
   doc["Client_Command"] = "Recieve State";
 
-  JsonObject message = doc.createNestedObject("Message");
+  JsonObject message = doc["Message"].to<JsonObject>();
   
   // Loop through hardware and add each pin value to the JSON
   for (int i = 0; i < PIN_COUNT; i++) {
