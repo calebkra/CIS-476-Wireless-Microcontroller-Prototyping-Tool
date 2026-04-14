@@ -200,7 +200,7 @@ void loop() {
     // Serial.println(incomingMsg.sensorValue);
     Serial.println("MQTT Publish Success!");
   } else {
-    Serial.println("MQTT Publish Failed.");
+    // Serial.println("MQTT Publish Failed.");
   }
   // Core 0 handles other non-blocking network tasks here
   // e.g., checking for incoming socket clients

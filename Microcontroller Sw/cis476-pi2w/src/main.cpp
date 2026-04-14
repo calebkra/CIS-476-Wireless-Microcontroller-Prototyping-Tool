@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include "secrets.h" 
 #include "MQTT_Controller.h"
+
 // ==========================================
 //    pico cpp
 // ==========================================
@@ -19,6 +20,10 @@
     #error "Define a board in platformio.ini!"
 #endif
 
+void sendAllStates(); // Prototype for function used in setup() and onMqttMessage()
+void onMqttConnect(bool sessionPresent); 
+void onMqttDisconnect(AsyncMqttClientDisconnectReason reason);
+void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total);
 
 //  DATA STRUCTURE & QUEUE SETUP
 // Define the shape of the data you want to pass between cores
@@ -214,7 +219,7 @@ void setup() {
 
 void loop() {
   CoreMessage incomingMsg; 
-  
+
   // Try to grab data from the queue
   if (queue_try_remove(&coreQueue, &incomingMsg)) {
     // debug serial prints
@@ -231,8 +236,7 @@ void loop() {
   // e.g., checking for incoming socket clients
 } // end loop
 
-// CORE 1: Hardware & Sensors
-
+// CORE 1: Hardware & Sensors SETUP
 void setup1() {
   // Setup hardware for Core 1 (e.g., I2C sensors, SPI devices)
   // Note: setup1() runs automatically alongside setup()
@@ -249,6 +253,7 @@ void setup1() {
     }
 }
 
+// CORE 1: Hardware & Sensors LOOP
 void loop1() {
   unsigned long now = millis(); 
 
@@ -278,4 +283,110 @@ void loop1() {
       }
   }
   delay(1);
+} 
+
+
+// UTILITY / CALLBACK FUNCTIONS
+
+/**
+ * @brief Sends the current state of all hardware pins to the MQTT server.
+ */
+void sendAllStates() {
+  JsonDocument doc;
+  doc["ID"] = DEVICE_ID;
+  doc["Device_Type"] = "Pico";
+  doc["Key"] = AUTH_CODE;
+  doc["Server_Command"] = "Send_Message";
+  doc["Client_Command"] = "Recieve State";
+
+  JsonObject message = doc["Message"].to<JsonObject>();
+  
+  // Loop through hardware and add each pin value to the JSON
+  for (int i = 0; i < PIN_COUNT; i++) {
+    int val = 0;
+    if (myHardware[i].mode == INPUT_PIN) { 
+        val = digitalRead(myHardware[i].pin); 
+    } else {
+        // For outputs, we'd ideally track the last set state 
+      // For now, we'll read the digital state or pulse state
+        val = digitalRead(myHardware[i].pin); 
+    }
+    message[myHardware[i].label] = val;
+  }
+
+  char buffer[512];
+  serializeJson(doc, buffer);
+  
+  // Publish back to the server topic with QoS 2
+  MQTT::getInstance().publish("Test/Server", 2, false, buffer); 
 }
+
+/**
+ * @brief Handles incoming MQTT messages from the server.
+ * Determines if the command is a "Get State" or "Set State".
+ */
+void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
+    String payloadStr = String(payload).substring(0, len);
+    
+    JsonDocument doc;
+    deserializeJson(doc, payloadStr);
+
+    String command = doc["Client_Command"];
+
+    if (command == "Get State") {
+        sendAllStates();
+    } 
+    else if (command == "Set State") {
+        String targetPinLabel = doc["Message"]["Pin"];
+        int value = doc["Message"]["Value"];
+        
+        // Find the pin by label and update it
+        for(int i=0; i<PIN_COUNT; i++) {
+            if(String(myHardware[i].label) == targetPinLabel) {
+                if(myHardware[i].signalType == SIG_PWM) {
+                    analogWrite(myHardware[i].pin, value);
+                } else {
+                    digitalWrite(myHardware[i].pin, value > 0 ? HIGH : LOW);
+                }
+                break;
+            }
+        }
+        sendAllStates(); 
+    }
+}
+
+/**
+ * @brief Callback executed upon successful MQTT connection.
+ * Publishes a 'Connect' message and subscribes to the device topic.
+ */
+void onMqttConnect(bool sessionPresent) {
+  Serial.println("[MQTT] Connected to Broker!");
+  MQTT::getInstance().stopReconnectTimer();
+
+  // Send the mandatory "Connect" message to the Server
+  JsonDocument connDoc;
+  connDoc["ID"] = DEVICE_ID;
+  connDoc["Device_Type"] = "Pico";
+  connDoc["Key"] = AUTH_CODE;
+  connDoc["Server_Command"] = "Connect";
+  
+  char connBuffer[256];
+  serializeJson(connDoc, connBuffer);
+  MQTT::getInstance().publish("Test/Server", 2, false, connBuffer); 
+
+  // ALIGNMENT FIX: Subscribe to Microcontroller/PICO/02
+  String myTopic = String(SUB_TOPIC_PREFIX) + String(DEVICE_ID);
+  MQTT::getInstance().subscribe(myTopic.c_str(), 2); 
+  Serial.print("[MQTT] Subscribed to: ");
+  Serial.println(myTopic);
+}
+
+/**
+ * @brief Callback executed when MQTT disconnection is detected.
+ * Restarts the reconnection timer.
+ */
+void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
+  Serial.println("[MQTT] Disconnected from Broker.");
+  MQTT::getInstance().startReconnectTimer();
+}
+
