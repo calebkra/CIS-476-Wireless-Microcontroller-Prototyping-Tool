@@ -234,7 +234,6 @@ class Mediator:
                         currGUIMapList.append(GUIinstance.ID)
                         self.microcontrollerGUIMapping.update({f"{microcontrollerInstance.ID}":currGUIMapList})
                         GUIinstance.sendMsg(json.dumps({"ID":"Server", "Key":"1234","Client_Command":"Bind Successful"}))
-                    print(self.microcontrollerGUIMapping)
                
             if serverCommand == "Disconnect":
                 #this block handles when a device disconnects from the server, it will remove the device from the respective lists and bindings

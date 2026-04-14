@@ -5,7 +5,7 @@ import classes
 
 
 #Constants
-SERVER_IP = '127.0.0.1'
+SERVER_IP = '192.168.8.101'
 PORT = 1883
 SERVER_TOPIC = "Test/Server"
 SERVER_KEY = "1234"

@@ -389,7 +389,9 @@ class RpiZeroGUI(abstractMCDisplayGUI):
         self.frame.pack(fill="x",expand=False)
         
         #starts execution
+        self.Window.after(self.delayInterval,self.getMCStates)
         self.Window.mainloop()
+        
         
         
     #button command methods that will forward pin and value to set MC states
@@ -495,7 +497,7 @@ class RpiZeroGUI(abstractMCDisplayGUI):
     def closeWindow(self):
         if self.terminated == False:
             self.terminated = True
-            self.ConnWindow.after(0,self.ConnWindow.destroy)
+            self.Window.after(0,self.Window.destroy)
 
 #Concrete GUI class for Raspberry Pi Pico
 class RpiPicoGUI(abstractMCDisplayGUI): #initalizes class
@@ -607,7 +609,9 @@ class RpiPicoGUI(abstractMCDisplayGUI): #initalizes class
         self.frame.pack(fill="x",expand=False)
         
         #starts execution
+        self.Window.after(self.delayInterval,self.getMCStates)
         self.Window.mainloop()
+        
         
         
     #button command methods that will forward pin and value to set MC states
@@ -828,7 +832,9 @@ class ESP32GUI(abstractMCDisplayGUI):
         self.frame.pack(fill="x",expand=False)
         
         #starts execution
+        self.Window.after(self.delayInterval,self.getMCStates)
         self.Window.mainloop()
+        
         
         
     #button command methods that will forward pin and value to set MC states
