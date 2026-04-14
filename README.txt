@@ -69,7 +69,12 @@ command: pip install paho-mqtt)
 
 ESP32-S3 and Raspberry Pi Pico Requirements:
 -	
-
+-	Both the Pico and ESP-32 have the same instructions. you will have to fill out the 
+secerts.h file found in `Mircocontroller Sw/pico/src/sercets.h`
+-	once this is up to date you can flash the boards with platformIO. The easy way to do 
+this in there VS code extention. once installed and running (whihc you will need to do by 
+clicking the icon after installing) you will upload the board's ocde to the mirco controller.
+-	Note that Platform IO has a CLI, this may be added for support for later time permitting. 
 
 MQTT Broker Requirements/Configuration:
 
