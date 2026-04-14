@@ -8,9 +8,11 @@ SERVER_IP = '192.168.8.101'
 PORT = 1883
 SERVER_KEY = "1234"
 MICROCONTROLLER_ID = "M001"
-MICROCONTROLLER_TYPE = "RpiZero"
 SERVER_TOPIC = "Test/Server"
+PWMFREQUENCY = 50 #this value represent the frequency in hertz (Hz) you what the PWM pins to be set at
 
+#Leave this constant alone
+MICROCONTROLLER_TYPE = "RpiZero"
 
 #Singleton and Proxy pattern
 #This proxy class will handle message authentication, fowarding authenticated messages to the connection class object, sends error message if key is incorrect
@@ -101,16 +103,13 @@ class ConnectionHandler:
     def on_message(self,client, userdata, msg):
         msgJson = json.loads(msg.payload.decode('utf-8'))
         clientCommand = msgJson.get("Client_Command",None)
-        print(f"Client_Command:{clientCommand}")
         if clientCommand == "Connection Success":
             self.Connected = True
         if clientCommand == "Set State":
-            print("Set State Reached")
             msg = msgJson.get("Message")
             self.CurrentMC.setStates(msg)
         if clientCommand == "Get State":
             self.CurrentMC.sendStates()
-            print("Get State Reached")
             
     #sets the current MC in the connection class so on_message can manipulate the microcontroller
     def setActiveMC(self,currMC):
@@ -134,20 +133,20 @@ class microcontroller:
         self.DigOut2PIN = 6
         self.PWM1PIN =12
         self.PWM2PIN =13
-        self.PWMFreq = 50
+        self.PWMFreq = PWMFREQUENCY
 
-        self.DigIn1State = "LOW"
-        self.DigIn2State= "LOW"
+        self.DigIn1State = "HIGH"
+        self.DigIn2State= "HIGH"
         self.DigOut1State = "LOW"
         self.DigOut2State = "LOW"
         self.PWM1Duty = 0
         self.PWM2Duty = 0
 
         self.pi.set_mode(self.DigIn1PIN,pigpio.INPUT)
-        self.pi.set_pull_up_down(self.DigIn1PIN,pigpio.PUD_DOWN)
+        self.pi.set_pull_up_down(self.DigIn1PIN,pigpio.PUD_UP)
         self.pi.cb1= self.pi.callback(self.DigIn1PIN,pigpio.EITHER_EDGE,self.inputCallback)
         self.pi.set_mode(self.DigIn2PIN,pigpio.INPUT)
-        self.pi.set_pull_up_down(self.DigIn2PIN,pigpio.PUD_DOWN)
+        self.pi.set_pull_up_down(self.DigIn2PIN,pigpio.PUD_UP)
         self.pi.cb2= self.pi.callback(self.DigIn2PIN,pigpio.EITHER_EDGE,self.inputCallback)
         self.pi.set_mode(self.DigOut1PIN,pigpio.OUTPUT)
         self.pi.set_mode(self.DigOut2PIN,pigpio.OUTPUT)
