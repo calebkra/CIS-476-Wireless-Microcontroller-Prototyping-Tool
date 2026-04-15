@@ -180,17 +180,15 @@ void sendAllStates() {
     JsonObject message = doc["Message"].to<JsonObject>();
     
     for (int i = 0; i < PIN_COUNT; i++) {
-        int val = 0;
-        if (myHardware[i].mode == INPUT_PIN) {
-          // use the pico controller. 
-          val = myBoard->readDigital(myHardware[i].pin);
-        } else if (myHardware[i].signalType == SIG_PWM) {
-          val = myBoard->readPWM(myHardware[i].pin);
-        } else {
-            val = digitalRead(myHardware[i].pin);
-          }
-        }
-        message[myHardware[i].label] = val;
+      int val = 0;
+      if (myHardware[i].mode == INPUT_PIN) {
+        // use the pico controller. 
+        val = myBoard->readDigital(myHardware[i].pin);
+      } else if (myHardware[i].signalType == SIG_PWM) {
+        val = myBoard->readPWM(myHardware[i].pin);
+      } else {
+        val = digitalRead(myHardware[i].pin);
+      }
     }
 
     char buffer[512];
@@ -207,6 +205,11 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     
     JsonDocument doc;
     deserializeJson(doc, payloadStr);
+
+    if (doc["Key"] != AUTH_CODE) {
+      Serial.println("[Security] Unauthorized command rejected.");
+      return; 
+    }
 
     String command = doc["Client_Command"];
 
