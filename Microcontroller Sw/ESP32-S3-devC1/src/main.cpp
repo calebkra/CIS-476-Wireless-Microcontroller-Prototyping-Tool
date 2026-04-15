@@ -12,12 +12,9 @@
 
 // --- Hardware Abstraction Layer ---
 #include "IController.h"
-#ifdef USE_PICO_CONTROLLER
-    #include "PicoController.h"
-    IController* myBoard = new PicoController();
-#else
-    #error "Define a board in platformio.ini!"
-#endif
+#include "PicoController.h"
+IController* myBoard = new PicoController();
+
 
 // Forward declarations
 void sendAllStates();
@@ -66,6 +63,114 @@ PinObject myHardware[] = {
 
 // Calculate how many pins are in the array automatically
 const int PIN_COUNT = sizeof(myHardware) / sizeof(PinObject);
+
+// ==========================================
+//    Core 0 Setup & Loop (Network / MQTT)
+// ==========================================
+
+void setup() {
+    Serial.begin(115200);
+    delay(2000);
+
+    // Create FreeRTOS queue (ESP32 native)
+    coreQueue = xQueueCreate(10, sizeof(CoreMessage));
+    if (coreQueue == NULL) {
+        Serial.println("Failed to create queue!");
+        while (1);
+    }
+
+    Serial.print("Connecting to Wi-Fi: ");
+    Serial.println(WIFI_SSID);
+    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(500);
+        Serial.print(".");
+    }
+    Serial.println("\nWi-Fi Connected!");
+
+    // Prepare Last Will and Testament
+    JsonDocument lwtDoc;
+    lwtDoc["ID"] = DEVICE_ID;
+    lwtDoc["Device_Type"] = "ESP32";
+    lwtDoc["Key"] = AUTH_CODE;
+    lwtDoc["Server_Command"] = "Disconnect";
+    char lwtBuffer[256];
+    serializeJson(lwtDoc, lwtBuffer);
+
+  // Setup Singleton MQTT Interface
+    MQTT& mqtt = MQTT::getInstance();
+    mqtt.setup(MQTT_SERVER, MQTT_PORT);
+    mqtt.setClientId(DEVICE_ID);
+    mqtt.setWill("Test/Server", 2, false, lwtBuffer);   // retain = false (align with Pico)
+
+    mqtt.onConnect(onMqttConnect);
+    mqtt.onDisconnect(onMqttDisconnect);
+    mqtt.onMessage(onMqttMessage);
+
+    mqtt.connect();
+}
+
+void loop() {
+    CoreMessage incomingMsg;
+
+    // Try to grab data from the queue
+    if (xQueueReceive(coreQueue, &incomingMsg, 0) == pdTRUE) {
+        sendAllStates();
+    }
+
+    // Other non‑blocking tasks can go here
+    delay(10);
+}
+
+// ==========================================
+//    Core 1 Setup & Loop (Hardware I/O)
+// ==========================================
+
+void setup1() {
+  // Setup hardware for Core 1 (e.g., I2C sensors, SPI devices)
+  // Note: setup1() runs automatically alongside setup()
+
+  // speficty the PIN here. with pwnPin
+  // required for saying if a pin is reading or doing something else. 
+  // this just basically tells the code HEY WE WANT TO READ OR WRITE ON THESE
+    for (int i = 0; i < PIN_COUNT; i++) {
+        if (myHardware[i].mode == INPUT_PIN) {
+            pinMode("GPIO" + toString(myHardware[i].pin), INPUT_PULLUP);   // ESP32 uses INPUT_PULLUP
+        } else {
+            pinMode(myHardware[i].pin, OUTPUT);
+        }
+    }
+}
+
+void loop1() {
+    unsigned long now = millis();
+
+    for (int i = 0; i < PIN_COUNT; i++) {
+        if (myHardware[i].mode == INPUT_PIN && (now - myHardware[i].lastCheck >= myHardware[i].interval)) {
+            CoreMessage newMsg;
+            newMsg.pin = myHardware[i].pin;
+            newMsg.timestamp = now;
+
+            switch (myHardware[i].signalType) {
+                case SIG_DIGITAL:
+                    newMsg.sensorValue = myBoard->readDigital(myHardware[i].pin);
+                    break;
+                case SIG_ANALOG:
+                    newMsg.sensorValue = myBoard->readAnalog(myHardware[i].pin);
+                    break;
+                case SIG_PWM:
+                    newMsg.sensorValue = myBoard->readPWM(myHardware[i].pin);
+                    break;
+            }
+
+            // Send to Core 0 queue (non‑blocking)
+            xQueueSend(coreQueue, &newMsg, 0);
+            myHardware[i].lastCheck = now;
+        }
+    }
+
+    delay(1);
+}
 
 // ==========================================
 //    MQTT Callbacks
@@ -160,115 +265,4 @@ void onMqttConnect(bool sessionPresent) {
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
     Serial.println("[MQTT] Disconnected from Broker.");
     MQTT::getInstance().startReconnectTimer();
-}
-
-
-
-
-// ==========================================
-//    Core 0 Setup & Loop (Network / MQTT)
-// ==========================================
-
-void setup() {
-    Serial.begin(115200);
-    delay(2000);
-
-    // Create FreeRTOS queue (ESP32 native)
-    coreQueue = xQueueCreate(10, sizeof(CoreMessage));
-    if (coreQueue == NULL) {
-        Serial.println("Failed to create queue!");
-        while (1);
-    }
-
-    Serial.print("Connecting to Wi-Fi: ");
-    Serial.println(WIFI_SSID);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
-    Serial.println("\nWi-Fi Connected!");
-
-    // Prepare Last Will and Testament
-    JsonDocument lwtDoc;
-    lwtDoc["ID"] = DEVICE_ID;
-    lwtDoc["Device_Type"] = "ESP32";
-    lwtDoc["Key"] = AUTH_CODE;
-    lwtDoc["Server_Command"] = "Disconnect";
-    char lwtBuffer[256];
-    serializeJson(lwtDoc, lwtBuffer);
-
-  // Setup Singleton MQTT Interface
-    MQTT& mqtt = MQTT::getInstance();
-    mqtt.setup(MQTT_SERVER, MQTT_PORT);
-    mqtt.setClientId(DEVICE_ID);
-    mqtt.setWill("Test/Server", 2, false, lwtBuffer);   // retain = false (align with Pico)
-
-    mqtt.onConnect(onMqttConnect);
-    mqtt.onDisconnect(onMqttDisconnect);
-    mqtt.onMessage(onMqttMessage);
-
-    mqtt.connect();
-}
-
-void loop() {
-    CoreMessage incomingMsg;
-
-    // Try to grab data from the queue
-    if (xQueueReceive(coreQueue, &incomingMsg, 0) == pdTRUE) {
-        sendAllStates();
-    }
-
-    // Other non‑blocking tasks can go here
-    delay(10);
-}
-
-// ==========================================
-//    Core 1 Setup & Loop (Hardware I/O)
-// ==========================================
-
-void setup1() {
-  // Setup hardware for Core 1 (e.g., I2C sensors, SPI devices)
-  // Note: setup1() runs automatically alongside setup()
-
-  // speficty the PIN here. with pwnPin
-  // required for saying if a pin is reading or doing something else. 
-  // this just basically tells the code HEY WE WANT TO READ OR WRITE ON THESE
-    for (int i = 0; i < PIN_COUNT; i++) {
-        if (myHardware[i].mode == INPUT_PIN) {
-            pinMode(myHardware[i].pin, INPUT_PULLUP);   // ESP32 uses INPUT_PULLUP
-        } else {
-            pinMode(myHardware[i].pin, OUTPUT);
-        }
-    }
-}
-
-void loop1() {
-    unsigned long now = millis();
-
-    for (int i = 0; i < PIN_COUNT; i++) {
-        if (myHardware[i].mode == INPUT_PIN && (now - myHardware[i].lastCheck >= myHardware[i].interval)) {
-            CoreMessage newMsg;
-            newMsg.pin = myHardware[i].pin;
-            newMsg.timestamp = now;
-
-            switch (myHardware[i].signalType) {
-                case SIG_DIGITAL:
-                    newMsg.sensorValue = myBoard->readDigital(myHardware[i].pin);
-                    break;
-                case SIG_ANALOG:
-                    newMsg.sensorValue = myBoard->readAnalog(myHardware[i].pin);
-                    break;
-                case SIG_PWM:
-                    newMsg.sensorValue = myBoard->readPWM(myHardware[i].pin);
-                    break;
-            }
-
-            // Send to Core 0 queue (non‑blocking)
-            xQueueSend(coreQueue, &newMsg, 0);
-            myHardware[i].lastCheck = now;
-        }
-    }
-
-    delay(1);
 }
