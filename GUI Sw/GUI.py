@@ -78,7 +78,7 @@ class ConnectionHandler:
         self.SelfTopic = f"GUI/{gui_id}"
         self.Server_Key = server_key
         self.GUIID = gui_id
-        self.client = mqtt.Client()
+        self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION1)
         self.client.on_message = self.ProxyOnMessage
         self.client.will_set(self.ServerTopic,json.dumps({"ID":gui_id,"Key":server_key,"Device_Type":"GUI","Server_Command":"Disconnect"}),qos=2)
         self.client.connect(server_ip, port)

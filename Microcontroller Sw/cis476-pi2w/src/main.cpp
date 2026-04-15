@@ -189,6 +189,7 @@ void sendAllStates() {
       } else {
         val = digitalRead(myHardware[i].pin);
       }
+      message[myHardware[i].label] = val;
     }
 
     char buffer[512];
@@ -214,21 +215,21 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     String command = doc["Client_Command"];
 
     if (command == "Get State") {
-        sendAllStates();
+      sendAllStates();
     } 
     else if (command == "Set State") {
     const char* targetPinLabel = doc["Message"]["Pin"]; 
     int value = doc["Message"]["Value"];
   // Find the pin by label and update it
     for(int i=0; i<PIN_COUNT; i++) {
-        if(myHardware[i].label == targetPinLabel) {
-            if(myHardware[i].signalType == SIG_PWM) {
-                myBoard->writePWM(myHardware[i].pin, (float)value);
-            } else {
-                myBoard->writeDigital(myHardware[i].pin, value);
-            }
-            break;
+      if(strcmp(myHardware[i].label, targetPinLabel) == 0) {
+        if(myHardware[i].signalType == SIG_PWM) {
+          myBoard->writePWM(myHardware[i].pin, (float)value);
+        } else {
+          myBoard->writeDigital(myHardware[i].pin, value);
         }
+        break;
+      }
     }
     sendAllStates(); 
 }
