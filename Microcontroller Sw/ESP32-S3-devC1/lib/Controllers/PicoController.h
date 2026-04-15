@@ -3,11 +3,13 @@
 #include <Arduino.h>
 #include "IController.h"
 
+#define MAX_ESP_PINS 50 // actually not sure how many this model has tbh
+
 class PicoController : public IController {
 private:
     // array for all pins to store last state, This is too send all states without
     // locking having to poll the other cores. 
-    int _lastState[30] = {0}; 
+    int _lastState[MAX_ESP_PINS] = {0}; 
 
 public:
     int readPWM(int pin) override;
