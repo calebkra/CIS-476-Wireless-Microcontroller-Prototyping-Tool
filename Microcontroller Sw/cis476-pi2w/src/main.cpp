@@ -109,7 +109,7 @@ void loop() {
   // Try to grab data from the queue
   if (queue_try_remove(&coreQueue, &incomingMsg)) {
     // send data to the server
-     
+    sendAllStates();
   }
 
 } // end loop
