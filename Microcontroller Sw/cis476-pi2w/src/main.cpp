@@ -66,120 +66,6 @@ PinObject myHardware[] = {
 // Calculate how many pins are in the array automatically
 const int PIN_COUNT = sizeof(myHardware) / sizeof(PinObject);
 
-
-
-void sendAllStates() {
-  JsonDocument doc;
-  doc["ID"] = DEVICE_ID;
-  doc["Device_Type"] = "Pico";
-  doc["Key"] = AUTH_CODE;
-  doc["Server_Command"] = "Send_Message";
-  doc["Client_Command"] = "Recieve State";
-
-  JsonObject message = doc["Message"].to<JsonObject>();
-  
-  // Loop through hardware and add each pin value to the JSON
-  for (int i = 0; i < PIN_COUNT; i++) {
-    int val = 0;
-    if (myHardware[i].mode == INPUT_PIN) { 
-        val = digitalRead(myHardware[i].pin); 
-    } else {
-        // For outputs, we'd ideally track the last set state 
-      // For now, we'll read the digital state or pulse state
-        val = digitalRead(myHardware[i].pin); 
-    }
-    message[myHardware[i].label] = val;
-  }
-
-  char buffer[512];
-  serializeJson(doc, buffer);
-  
-  // Publish back to the server topic with QoS 2
-  MQTT::getInstance().publish("Test/Server", 2, false, buffer); 
-}
-
-void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
-    String payloadStr = String(payload).substring(0, len);
-    
-    JsonDocument doc;
-    deserializeJson(doc, payloadStr);
-
-    String command = doc["Client_Command"];
-
-    if (command == "Get State") {
-        sendAllStates();
-    } 
-    else if (command == "Set State") {
-        //String targetPinLabel = doc["Message"]["Pin"];
-        //int value = doc["Message"]["Value"];
-        
-          JsonObject msg = doc["Message"].as<JsonObject>();
-
-          String targetPinLabel;
-          String valueString;
-          for (JsonPair kv : msg) {
-            const char* pinChar = kv.key().c_str();
-            const char* valueChar = kv.value().as<const char*>();
-
-            targetPinLabel = String(pinChar);
-            valueString = String(valueChar);
-          }
-
-          int value;
-
-          if(valueString == "HIGH"){
-            value = 1;
-          }
-          else if (valueString == "LOW"){
-            value = 0;
-          } else{
-            value = valueString.toInt();
-          }
-    
-        // Find the pin by label and update it
-        for(int i=0; i<PIN_COUNT; i++) {
-            if(String(myHardware[i].label) == targetPinLabel) {
-                if(myHardware[i].signalType == SIG_PWM) {
-                    analogWrite(myHardware[i].pin, value);
-                } else {
-                    //digitalWrite(myHardware[i].pin, value > 0 ? HIGH : LOW);
-                    digitalWrite(myHardware[i].pin, value);
-                    //Serial.printf("\nSet State:%s Value:%i\n",targetPinLabel,value);                
-                }
-                break;
-            }
-        }
-        sendAllStates(); 
-    }
-}
-
-void onMqttConnect(bool sessionPresent) {
-  Serial.println("[MQTT] Connected to Broker!");
-  MQTT::getInstance().stopReconnectTimer();
-
-  // Send the mandatory "Connect" message to the Server
-  JsonDocument connDoc;
-  connDoc["ID"] = DEVICE_ID;
-  connDoc["Device_Type"] = "Pico";
-  connDoc["Key"] = AUTH_CODE;
-  connDoc["Server_Command"] = "Connect";
-  
-  char connBuffer[256];
-  serializeJson(connDoc, connBuffer);
-  MQTT::getInstance().publish("Test/Server", 2, false, connBuffer); 
-
-  // ALIGNMENT FIX: Subscribe to Microcontroller/PICO/02
-  String myTopic = String(SUB_TOPIC_PREFIX) + String(DEVICE_ID);
-  MQTT::getInstance().subscribe(myTopic.c_str(), 2); 
-  Serial.print("[MQTT] Subscribed to: ");
-  Serial.println(myTopic);
-}
-
-void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
-  Serial.println("[MQTT] Disconnected from Broker.");
-  MQTT::getInstance().startReconnectTimer();
-}
-
 void setup() {
   Serial.begin(115200);  
   delay(2000); 
@@ -222,18 +108,10 @@ void loop() {
 
   // Try to grab data from the queue
   if (queue_try_remove(&coreQueue, &incomingMsg)) {
-    // debug serial prints
-    // Serial.print("[Core 0] Background Data -> Pin: ");
-    // Serial.print(incomingMsg.pin);
-    // Serial.print(" | Value: ");
-    // Serial.println(incomingMsg.sensorValue);
-    
-    //Serial.println("MQTT Publish Success!");
-  } else {
-    //Serial.println("MQTT Publish Failed.");
+    // send data to the server
+     
   }
-  // Core 0 handles other non-blocking network tasks here
-  // e.g., checking for incoming socket clients
+
 } // end loop
 
 // CORE 1: Hardware & Sensors SETUP
@@ -246,7 +124,7 @@ void setup1() {
   // this just basically tells the code HEY WE WANT TO READ OR WRITE ON THESE
   for (int i = 0; i < PIN_COUNT; i++) {
         if (myHardware[i].mode == INPUT_PIN) {
-            pinMode(myHardware[i].pin, INPUT);
+            pinMode(myHardware[i].pin, INPUT_PULLUP);
         } else {
             pinMode(myHardware[i].pin, OUTPUT_12MA);
         }
@@ -292,35 +170,34 @@ void loop1() {
  * @brief Sends the current state of all hardware pins to the MQTT server.
  */
 void sendAllStates() {
-  JsonDocument doc;
-  doc["ID"] = DEVICE_ID;
-  doc["Device_Type"] = "Pico";
-  doc["Key"] = AUTH_CODE;
-  doc["Server_Command"] = "Send_Message";
-  doc["Client_Command"] = "Recieve State";
+    JsonDocument doc;
+    doc["ID"] = DEVICE_ID;
+    doc["Device_Type"] = "Pico";
+    doc["Key"] = AUTH_CODE;
+    doc["Server_Command"] = "Send_Message";
+    doc["Client_Command"] = "Receive State";
 
-  JsonObject message = doc["Message"].to<JsonObject>();
-  
-  // Loop through hardware and add each pin value to the JSON
-  for (int i = 0; i < PIN_COUNT; i++) {
-    int val = 0;
-    if (myHardware[i].mode == INPUT_PIN) { 
-        val = digitalRead(myHardware[i].pin); 
-    } else {
-        // For outputs, we'd ideally track the last set state 
-      // For now, we'll read the digital state or pulse state
-        val = digitalRead(myHardware[i].pin); 
+    JsonObject message = doc["Message"].to<JsonObject>();
+    
+    for (int i = 0; i < PIN_COUNT; i++) {
+        int val = 0;
+        if (myHardware[i].mode == INPUT_PIN) {
+          // use the pico controller. 
+          val = myBoard->readDigital(myHardware[i].pin);
+        } else if (myHardware[i].signalType == SIG_PWM) {
+          val = myBoard->readPWM(myHardware[i].pin);
+        } else {
+            val = digitalRead(myHardware[i].pin);
+          }
+        }
+        message[myHardware[i].label] = val;
     }
-    message[myHardware[i].label] = val;
-  }
 
-  char buffer[512];
-  serializeJson(doc, buffer);
-  
-  // Publish back to the server topic with QoS 2
-  MQTT::getInstance().publish("Test/Server", 2, false, buffer); 
+    char buffer[512];
+    serializeJson(doc, buffer);
+    
+    MQTT::getInstance().publish("Test/Server", 2, false, buffer);
 }
-
 /**
  * @brief Handles incoming MQTT messages from the server.
  * Determines if the command is a "Get State" or "Set State".
@@ -337,22 +214,21 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
         sendAllStates();
     } 
     else if (command == "Set State") {
-        String targetPinLabel = doc["Message"]["Pin"];
-        int value = doc["Message"]["Value"];
-        
-        // Find the pin by label and update it
-        for(int i=0; i<PIN_COUNT; i++) {
-            if(String(myHardware[i].label) == targetPinLabel) {
-                if(myHardware[i].signalType == SIG_PWM) {
-                    analogWrite(myHardware[i].pin, value);
-                } else {
-                    digitalWrite(myHardware[i].pin, value > 0 ? HIGH : LOW);
-                }
-                break;
+    const char* targetPinLabel = doc["Message"]["Pin"]; 
+    int value = doc["Message"]["Value"];
+  // Find the pin by label and update it
+    for(int i=0; i<PIN_COUNT; i++) {
+        if(myHardware[i].label == targetPinLabel) {
+            if(myHardware[i].signalType == SIG_PWM) {
+                myBoard->writePWM(myHardware[i].pin, (float)value);
+            } else {
+                myBoard->writeDigital(myHardware[i].pin, value);
             }
+            break;
         }
-        sendAllStates(); 
     }
+    sendAllStates(); 
+}
 }
 
 /**
