@@ -75,6 +75,35 @@ void setup() {
   Serial.print("Connecting to Wi-Fi: ");
   Serial.println(WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
+  Serial.print("Wi-Fi IP: ");
+Serial.println(WiFi.localIP());
+Serial.print("Gateway: ");
+Serial.println(WiFi.gatewayIP());
+Serial.print("DNS: ");
+Serial.println(WiFi.dnsIP());
+
+// Test broker resolution
+IPAddress brokerIP;
+if (WiFi.hostByName(MQTT_SERVER, brokerIP)) {
+  Serial.print("Broker IP: ");
+  Serial.println(brokerIP);
+} else {
+  Serial.println("DNS lookup failed for MQTT_SERVER");
+}
+
+// Test raw TCP connection
+WiFiClient test;
+Serial.print("Testing TCP to ");
+Serial.print(MQTT_SERVER);
+Serial.print(":");
+Serial.print(MQTT_PORT);
+Serial.print(" ... ");
+if (test.connect(MQTT_SERVER, MQTT_PORT)) {
+  Serial.println("SUCCESS");
+  test.stop();
+} else {
+  Serial.println("FAILED");
+}
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
