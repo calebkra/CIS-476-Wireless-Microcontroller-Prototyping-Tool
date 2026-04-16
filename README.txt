@@ -34,8 +34,8 @@ GUI Requirements:
 -Must be run on a computer or SBC with graphical interface operating system 
 (Windows, MacOS, Linux)
 -Computer or SBC must have Python installed
--Must have Tkinter (comes standard with python) (this can be installed using pip 
-using the following commands: pip install tk )
+-Must have Tkinter (comes standard with python) (although this can be installed using pip
+if it is missing in your python installation using the following commands: pip install tk )
 -Must have paho-mqtt python library installed (this can be installed using pip with 
 command: pip install paho-mqtt)
 -Computer or SBC must have local network access (if self hosting MQTT broker) or 
@@ -45,7 +45,12 @@ internet access (if using remote MQTT broker) (more on this topic later)
 Microcontroller Requirements:
 
 Currently this system supports 3 microcontrollers or SBCs (Rapsberry Pi Zero 2w, 
-Rapsberry Pi Pico 2w, ESP32-S3)
+Rapsberry Pi Pico 2w, ESP32-S3) although only the Raspberry Pi Zero 2w implementation
+is currently working with full features. The Raspberry Pi Pico 2w and ESP32-S3 currently
+only support connecting to the server and once connected is may drop its connection without
+warning, and may need a full reboot to reestablish the connection. In the future we plan to correct
+these connection issues, as well as bring full support to these devices as well. Additionally, we
+intend to add additional microcontrollers to be supported by the system. 
 
 Raspberry Pi 2 Zero Requirements:
 
@@ -55,13 +60,12 @@ network or the internet
 o	To install Raspberry Pi OS using the following link to download the imager, 
 and follow the prompts to install the OS, we recommend using the wi-fi 
 configuration tool in the installer to set up the initial wi-fi connection, as well 
-as enabling SSH: Raspberry Pi software   Raspberry Pi
+as enabling SSH: https://www.raspberrypi.com/software/
 o	To add additional wi-fi networks after the OS has been set up we recommend 
 using cli command: nmtui , This tool will allow you to easily add wi-fi 
 connections
 -	Must have pigpio installed and running in daemon mode (the link provided here will 
-guide you through the setup process: How to Install and Use pigpio for GPIO Control 
-on Raspberry Pi   TheLinuxCode) 
+guide you through the setup process: https://thelinuxcode.com/install-pigpio-raspberry-pi/) 
 -	Must have paho-mqtt python library installed (this can be installed using pip with 
 command: pip install paho-mqtt)
 
@@ -69,7 +73,12 @@ command: pip install paho-mqtt)
 
 ESP32-S3 and Raspberry Pi Pico Requirements:
 -	
-
+-	Both the Pico and ESP-32 have the same instructions. you will have to fill out the 
+secerts.h file found in `Mircocontroller Sw/pico/src/sercets.h`
+-	once this is up to date you can flash the boards with platformIO. The easy way to do 
+this in there VS code extention. once installed and running (whihc you will need to do by 
+clicking the icon after installing) you will upload the board's ocde to the mirco controller.
+-	Note that Platform IO has a CLI, this may be added for support for later time permitting. 
 
 MQTT Broker Requirements/Configuration:
 
@@ -83,21 +92,21 @@ listener (port#)
 allow_anonymous true 
 
 where (port#) is replaced with the desired listening port. (This link will guide you on 
-raspberry pi: Install Mosquitto Broker Raspberry Pi | Random Nerd Tutorials, and this 
-link provides a guide for other operating systems: Quick Guide to The 
-Mosquitto.conf File With Examples)
+Raspberry Pi: https://randomnerdtutorials.com/how-to-install-mosquitto-broker-on-raspberry-pi/, and this 
+link provides a guide for other operating systems: http://www.steves-internet-guide.com/mossquitto-conf-file/)
 -	You can use a remote MQTT broker hosted by someone else, however this is not 
 recommended as the latency will be an issue and affect performance
 
 
 
-Running the Software
+Running the Software (How to deploy)
 
 
 In this section of the guide, we assume you already have the MQTT broker running as a 
 service on your server machine. We also assume you already have a copy of the repository 
 on your computers and will transfer the respective files to the respective machines that 
-meet the requirements above. You must start the server software first, then you may start 
+meet the requirements above. (Please see the requirements above for guidance on installing
+the required dependencies and infrastructure) You must start the server software first, then you may start 
 GUI and microcontroller instance in whatever order you wish to. 
 
 Running the server software:
@@ -108,14 +117,19 @@ Server.py
 3.	Modify the following constant values at the top of the file: SERVER_IP, PORT, 
 SERVER_KEY, SERVER_TOPIC (note you must provide a value for all of the constant 
 variables, they will have default values, but you must modify them to your setup)
+
 SERVER_IP is the IP address or hostname of the MQTT broker you are using
+
 PORT is the port number that the MQTT is listening for traffic on
+
 SERVER_KEY this value that all GUI and microcontroller instances need to have as 
 their key value, this provides basic authentication in the form of designated  shared 
 key   
+
 SERVER_TOPIC this is the MQTT topic that the server will monitor for incoming 
 messages (note this value must be the same in all GUI and microcontroller 
 instances)
+
 4.	Save the changes and transfer the Server.py file and classes.py file to the server 
 machine that meets the requirements above.
 5.	Run the server program by executing the Server.py file with python.
@@ -187,12 +201,19 @@ pin out is as follows:
 -	PWM 2 : GPIO 13
 
 Here is a link to the physical pin to GPIO layout for the Raspberry Pi Zero 2W for your 
-convenience: RPI Zero 2W Board Layout: GPIO Pinout, Specs, Schematic in detail
+convenience: https://www.etechnophiles.com/rpi-zero-2w-board-layout-pinout-specs-price/#40-pin-gpio-header
 
 Please note that digital input 1 and 2 are set to pull up mode, they will read as HIGH or 1 
 until connected to ground.  Additionally, please note that the PWM uses the hardware PWM 
 controller as opposed to a software implementation, so when determining a PWM 
 frequency to use keep this in mind.
+
+
+Using the ESP32-S3 and Raspberry Pi Pico 2w microcontroller software:
+
+After flashing the microcontroller with the software (as laid out in the requirements section),
+after powering the microcontroller, no further action is required.
+
 
 Using the GUI program:
 
