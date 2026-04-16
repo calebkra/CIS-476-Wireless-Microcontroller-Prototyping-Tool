@@ -47,9 +47,8 @@ Microcontroller Requirements:
 Currently this system supports 3 microcontrollers or SBCs (Rapsberry Pi Zero 2w, 
 Rapsberry Pi Pico 2w, ESP32-S3) although only the Raspberry Pi Zero 2w implementation
 is currently working with full features. The Raspberry Pi Pico 2w and ESP32-S3 currently
-only support connecting to the server and once connected is may drop its connection without
-warning, and may need a full reboot to reestablish the connection. In the future we plan to correct
-these connection issues, as well as bring full support to these devices as well. Additionally, we
+only supports connecting to the server, reading and manipulating pin states is not fully
+supported yet.  In the future we plan bring full support to these devices as well. Additionally, we
 intend to add additional microcontrollers to be supported by the system. 
 
 Raspberry Pi 2 Zero Requirements:
