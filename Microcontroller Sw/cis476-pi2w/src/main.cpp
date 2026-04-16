@@ -46,6 +46,7 @@ typedef struct {
   SignalType_t signalType;  // SIG_DIGITAL, SIG_ANALOG, or SIG_PWM
   uint32_t interval; 
   uint32_t lastCheck;
+  float val;
 } PinObject;
 
 // Create the global queue so both cores can access it
@@ -55,12 +56,12 @@ queue_t coreQueue;
 // {"DO1":(value), "DO2": (value), "DI1": (value), "DI2": (value), "PWM1": (value), "PWM2":(value)}
 // this was chat's Idea after a code review idk why. 
 PinObject myHardware[] = {
-    {"PWM1",  8,  OUTPUT_PIN, SIG_PWM,     5000, 0}, 
-    {"PWM2",  9,  OUTPUT_PIN, SIG_PWM,     5000, 0}, 
-    {"DI1",   36,  INPUT_PIN,  SIG_DIGITAL, 5000, 0}, 
-    {"DI2",   37,  INPUT_PIN,  SIG_DIGITAL, 5000, 0}, 
-    {"DO1",   6,  OUTPUT_PIN, SIG_DIGITAL, 5000, 0},
-    {"DO2",   7,  OUTPUT_PIN, SIG_DIGITAL, 5000, 0} // Added to match rubric
+    {"PWM1",  8,  OUTPUT_PIN, SIG_PWM,     0,     0, 1}, 
+    {"PWM2",  9,  OUTPUT_PIN, SIG_PWM,     0,     0, 1}, 
+    {"DI1",   36,  INPUT_PIN,  SIG_DIGITAL, 5000, 0, 0}, 
+    {"DI2",   37,  INPUT_PIN,  SIG_DIGITAL, 5000, 0, 0}, 
+    {"DO1",   6,  OUTPUT_PIN, SIG_DIGITAL, 0,     0, 1},
+    {"DO2",   7,  OUTPUT_PIN, SIG_DIGITAL, 0,     0, 1} // Added to match rubric
 };
 
 // Calculate how many pins are in the array automatically
@@ -188,6 +189,18 @@ void loop1() {
 
           queue_try_add(&coreQueue, &newMsg);
           myHardware[i].lastCheck = now;
+      } else {
+        switch (myHardware[i].signalType) {
+              case SIG_DIGITAL:
+                  myBoard->writeDigital(myHardware[i].pin, myHardware[i].val);
+                  break;
+              case SIG_ANALOG:
+                  myBoard->writeAnalog(myHardware[i].pin, myHardware[i].val);
+                  break;
+              case SIG_PWM:
+                  myBoard->writePWM(myHardware[i].pin, myHardware[i].val);
+                  break;
+          }
       }
   }
   delay(1);
@@ -236,53 +249,81 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
   String payloadStr = String(payload).substring(0, len);
   
   JsonDocument doc;
-  deserializeJson(doc, payloadStr);
-
-  if (doc["Key"] != AUTH_CODE) {
-    Serial.println("[Security] Unauthorized command rejected.");
-    return; 
+  DeserializationError error = deserializeJson(doc, payloadStr);
+  if (error) {
+    Serial.print("[MQTT] JSON parse error: ");
+    Serial.println(error.c_str());
+    return;
   }
 
-  String command = doc["Client_Command"];
+  // Authentication check
+  if (doc["Key"] != AUTH_CODE) {
+    Serial.println("[Security] Unauthorized command rejected.");
+    return;
+  }
+
+  String command = doc["Client_Command"] | "";
 
   if (command == "Get State") {
     sendAllStates();
-  } else if (command == "Set State") {
-  // const char* targetPinLabel = doc["Message"]["Pin"]; 
-  // int value = doc["Message"]["Value"];
-  String targetPinLabel;
-  String valueString;
-  JsonObject msg = doc["Message"].as<JsonObject>();
-  for (JsonPair kv : msg) {
-    const char* pinChar = kv.key().c_str();
-    const char* valueChar = kv.value().as<const char*>();
-
-    targetPinLabel = String(pinChar);
-    valueString = String(valueChar);
   }
+  else if (command == "Set State") {
+    // The message is expected to contain a single key-value pair in "Message"
+    // e.g., {"Message": {"DO1": 1}} or {"Message": {"PWM1": 512}}
+    JsonObject msg = doc["Message"].as<JsonObject>();
 
-  int value;
 
-  if(valueString == "HIGH"){
-    value = 1;
-  }
-  else if (valueString == "LOW"){
-    value = 0;
-  } else{
-    value = valueString.toInt();
-  }
-  // Find the pin by label and update it
-  for(int i=0; i<PIN_COUNT; i++) {
-    if(String(myHardware[i].label) == targetPinLabel) {
-      if(myHardware[i].signalType == SIG_PWM) {
-        myBoard->writePWM(myHardware[i].pin, (float)value);
+    // Iterate over the first (and only) key-value pair
+    for (JsonPair kv : msg) {
+      const char* pinLabel = kv.key().c_str();
+      float newValue;
+
+      // Handle string values like "HIGH"/"LOW" or numeric
+      if (kv.value().is<const char*>()) {
+        String valStr = kv.value().as<const char*>();
+        if (valStr.equalsIgnoreCase("HIGH")) {
+          newValue = 1.0f;
+        } else if (valStr.equalsIgnoreCase("LOW")) {
+          newValue = 0.0f;
+        } else {
+          newValue = valStr.toFloat(); // fallback
+        }
       } else {
-        myBoard->writeDigital(myHardware[i].pin, value);
+        newValue = kv.value().as<float>();
       }
-      break;
+
+      // Find the matching pin by label and update its desired value
+      bool found = false;
+      for (int i = 0; i < PIN_COUNT; i++) {
+        if (String(myHardware[i].label) == pinLabel) {
+          // Optionally clamp PWM values to a sensible range (e.g., 0-255 or 0-4095)
+          if (myHardware[i].signalType == SIG_PWM) {
+            if (newValue < 0) newValue = 0;
+            if (newValue > 255) newValue = 255; // adjust to your PWM resolution
+          }
+          myHardware[i].val = newValue;
+          found = true;
+          Serial.print("[MQTT] Updated ");
+          Serial.print(pinLabel);
+          Serial.print(" to ");
+          Serial.println(newValue);
+          break;
+        }
+      }
+      if (!found) {
+        Serial.print("[MQTT] Unknown pin label: ");
+        Serial.println(pinLabel);
+      }
+      break; // only one pair expected
     }
+
+    // After updating the value, we can optionally send the new state back
+    // (but it's better to let loop1() apply it first; consider a short delay)
+    sendAllStates();
   }
-  sendAllStates(); 
+  else {
+    Serial.print("[MQTT] Unknown Client_Command: ");
+    Serial.println(command);
   }
 }
 
