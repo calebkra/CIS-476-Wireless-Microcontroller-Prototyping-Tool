@@ -1,18 +1,15 @@
 #include "MQTT_Controller.h"
 
-// Set a large buffer (2048) to handle your JSON payloads safely
-MQTT::MQTT() : mqttClient(4096), _wasConnected(false), _onConnectCb(nullptr), _onDisconnectCb(nullptr), _onMessageCb(nullptr) {
-    
-    mqttReconnectTimer = xTimerCreate(
-        "mqttTimer", 
-        pdMS_TO_TICKS(2000), 
-        pdFALSE, 
-        (void*)0, 
-        reconnectTimerCallback
-    );
-
-    // Start a background FreeRTOS task to process incoming MQTT messages automatically
-    xTaskCreate(loopTaskCode, "mqttLoop", 4096, this, 1, &_loopTask);
+MQTT::MQTT()
+    : mqttClient(4096)
+    , _wasConnected(false)
+    , _onConnectCb(nullptr)
+    , _onDisconnectCb(nullptr)
+    , _onMessageCb(nullptr)
+    , _reconnectEnabled(false)
+    , _lastReconnectAttempt(0)
+{
+    // No background task – user must call loop()
 }
 
 void MQTT::setup(const char* host, uint16_t port) {
@@ -30,30 +27,57 @@ void MQTT::setWill(const char* topic, uint8_t qos, bool retain, const char* payl
 
 void MQTT::connect() {
     Serial.println("[MQTT] Connecting to broker...");
-    
+
     bool success = mqttClient.connect(_clientId.c_str());
 
     if (success) {
         Serial.println("[MQTT] Connected to Broker!");
         stopReconnectTimer();
         if (_onConnectCb) {
-            _onConnectCb(false); // Trigger front-end connect callback
+            _onConnectCb(false);   // false = not a session present (simplified)
         }
     } else {
         Serial.print("[MQTT] Failed, rc=");
         Serial.print(mqttClient.lastError());
-        Serial.println(" - trying again later");
-        startReconnectTimer();
+        Serial.println(" - will retry if reconnect timer is active");
+        // If reconnect is enabled, loop() will handle it
     }
 }
 
 void MQTT::disconnect() {
-    Serial.println("[MQTT] Disconnected");
+    Serial.println("[MQTT] Disconnecting");
     mqttClient.disconnect();
 }
 
+void MQTT::loop() {
+    // Let the underlying library process incoming data
+    mqttClient.loop();
+
+    bool isConnected = mqttClient.connected();
+
+    // Detect falling edge: was connected, now disconnected
+    if (_wasConnected && !isConnected) {
+        Serial.println("[MQTT] Connection lost");
+        if (_onDisconnectCb) {
+            _onDisconnectCb(AsyncMqttClientDisconnectReason::TCP_DISCONNECTED);
+        }
+        // If reconnect is enabled, we'll attempt to reconnect in this loop
+    }
+
+    // Handle automatic reconnection if enabled and disconnected
+    if (_reconnectEnabled && !isConnected) {
+        unsigned long now = millis();
+        if (now - _lastReconnectAttempt >= 5000) {   // retry every 5 seconds
+            _lastReconnectAttempt = now;
+            Serial.println("[MQTT] Reconnect attempt...");
+            connect();   // will set _reconnectEnabled = false if successful
+        }
+    }
+
+    _wasConnected = isConnected;
+}
+
 uint16_t MQTT::publish(const char* topic, uint8_t qos, bool retain, const char* payload) {
-    // Returns 1 on success, 0 on fail to match the uint16_t signature
     return mqttClient.publish(topic, payload, retain, qos) ? 1 : 0;
 }
 
@@ -61,7 +85,7 @@ uint16_t MQTT::subscribe(const char* topic, uint8_t qos) {
     return mqttClient.subscribe(topic, qos) ? 1 : 0;
 }
 
-// --- Callbacks ---
+// --- Callback registration (unchanged) ---
 void MQTT::onConnect(AsyncMqttClientInternals::OnConnectUserCallback callback) {
     _onConnectCb = callback;
 }
@@ -74,63 +98,24 @@ void MQTT::onMessage(AsyncMqttClientInternals::OnMessageUserCallback callback) {
     _onMessageCb = callback;
 }
 
+// --- Reconnect control (simplified) ---
 void MQTT::startReconnectTimer() {
-    xTimerStart(mqttReconnectTimer, 0);
+    _reconnectEnabled = true;
+    _lastReconnectAttempt = millis();   // avoid immediate retry
 }
 
 void MQTT::stopReconnectTimer() {
-    xTimerStop(mqttReconnectTimer, 0);
+    _reconnectEnabled = false;
 }
 
-void MQTT::reconnectTimerCallback(TimerHandle_t xTimer) {
-    MQTT::getInstance().connect();
-}
-
-// --- Internal Handlers ---
-
-    // This task runs continuously in the background, making the synchronous library act "Async"
-    void MQTT::loopTaskCode(void* parameter) {
-        MQTT* instance = static_cast<MQTT*>(parameter);
-
-        bool do_timer = false; 
-        unsigned long previousMillis = 0;
-        const long interval = 6700; // Interval in milliseconds (1 second)
-
-        for (;;) {
-            bool isConnected = instance->mqttClient.connected();
-            unsigned long currentMillis = millis();
-
-            // Detect sudden disconnects and fire callback
-            if ( instance->_wasConnected && !isConnected) {
-                do_timer = true;
-                previousMillis = currentMillis;
-            }
-            
-            if ( do_timer && currentMillis - previousMillis >= interval ){      // timer is done ){
-                if (instance->_onDisconnectCb) {
-                    instance->_onDisconnectCb(AsyncMqttClientDisconnectReason::TCP_DISCONNECTED); 
-                }
-            }
-            
-            if (isConnected) {
-                do_timer = false;
-                instance->mqttClient.loop(); // Handle QoS 2 acknowledgments
-            }
-            
-            instance->_wasConnected = isConnected;
-            vTaskDelay(pdMS_TO_TICKS(10)); // Yield to other FreeRTOS tasks
-        }
-    }
-
-// Maps the 256dpi callback signature to the AsyncMqttClient signature your main.cpp expects
+// --- Static bridge (unchanged) ---
 void MQTT::messageBridge(MQTTClient *client, char topic[], char bytes[], int length) {
     MQTT& instance = MQTT::getInstance();
     if (instance._onMessageCb) {
         AsyncMqttClientMessageProperties props;
-        props.qos = 2;       
-        props.dup = false;   
+        props.qos    = 2;
+        props.dup    = false;
         props.retain = false;
-        
         instance._onMessageCb(topic, bytes, props, length, 0, length);
     }
 }
