@@ -75,6 +75,35 @@ void setup() {
   Serial.print("Connecting to Wi-Fi: ");
   Serial.println(WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
+  Serial.print("Wi-Fi IP: ");
+Serial.println(WiFi.localIP());
+Serial.print("Gateway: ");
+Serial.println(WiFi.gatewayIP());
+Serial.print("DNS: ");
+Serial.println(WiFi.dnsIP());
+
+// Test broker resolution
+IPAddress brokerIP;
+if (WiFi.hostByName(MQTT_SERVER, brokerIP)) {
+  Serial.print("Broker IP: ");
+  Serial.println(brokerIP);
+} else {
+  Serial.println("DNS lookup failed for MQTT_SERVER");
+}
+
+// Test raw TCP connection
+WiFiClient test;
+Serial.print("Testing TCP to ");
+Serial.print(MQTT_SERVER);
+Serial.print(":");
+Serial.print(MQTT_PORT);
+Serial.print(" ... ");
+if (test.connect(MQTT_SERVER, MQTT_PORT)) {
+  Serial.println("SUCCESS");
+  test.stop();
+} else {
+  Serial.println("FAILED");
+}
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
@@ -104,15 +133,16 @@ void setup() {
 }
 
 void loop() {
+  // Keep MQTT alive
+  MQTT::getInstance().loop();
+
   CoreMessage incomingMsg; 
+    if (queue_try_remove(&coreQueue, &incomingMsg)) {
+      sendAllStates();
+      delay(1000);
+    }
 
-  // Try to grab data from the queue
-  if (queue_try_remove(&coreQueue, &incomingMsg)) {
-    // send data to the server
-    sendAllStates();
-  }
-
-} // end loop
+  } // end loop
 
 // CORE 1: Hardware & Sensors SETUP
 void setup1() {
@@ -196,43 +226,64 @@ void sendAllStates() {
     serializeJson(doc, buffer);
     
     MQTT::getInstance().publish("Test/Server", 2, false, buffer);
+    Serial.print("sent meesage\n");
 }
 /**
  * @brief Handles incoming MQTT messages from the server.
  * Determines if the command is a "Get State" or "Set State".
  */
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
-    String payloadStr = String(payload).substring(0, len);
-    
-    JsonDocument doc;
-    deserializeJson(doc, payloadStr);
+  String payloadStr = String(payload).substring(0, len);
+  
+  JsonDocument doc;
+  deserializeJson(doc, payloadStr);
 
-    if (doc["Key"] != AUTH_CODE) {
-      Serial.println("[Security] Unauthorized command rejected.");
-      return; 
-    }
+  if (doc["Key"] != AUTH_CODE) {
+    Serial.println("[Security] Unauthorized command rejected.");
+    return; 
+  }
 
-    String command = doc["Client_Command"];
+  String command = doc["Client_Command"];
 
-    if (command == "Get State") {
-      sendAllStates();
-    } 
-    else if (command == "Set State") {
-    const char* targetPinLabel = doc["Message"]["Pin"]; 
-    int value = doc["Message"]["Value"];
+  if (command == "Get State") {
+    sendAllStates();
+  } else if (command == "Set State") {
+  // const char* targetPinLabel = doc["Message"]["Pin"]; 
+  // int value = doc["Message"]["Value"];
+  String targetPinLabel;
+  String valueString;
+  JsonObject msg = doc["Message"].as<JsonObject>();
+  for (JsonPair kv : msg) {
+    const char* pinChar = kv.key().c_str();
+    const char* valueChar = kv.value().as<const char*>();
+
+    targetPinLabel = String(pinChar);
+    valueString = String(valueChar);
+  }
+
+  int value;
+
+  if(valueString == "HIGH"){
+    value = 1;
+  }
+  else if (valueString == "LOW"){
+    value = 0;
+  } else{
+    value = valueString.toInt();
+  }
   // Find the pin by label and update it
-    for(int i=0; i<PIN_COUNT; i++) {
-      if(strcmp(myHardware[i].label, targetPinLabel) == 0) {
-        if(myHardware[i].signalType == SIG_PWM) {
-          myBoard->writePWM(myHardware[i].pin, (float)value);
-        } else {
-          myBoard->writeDigital(myHardware[i].pin, value);
-        }
-        break;
+  for(int i=0; i<PIN_COUNT; i++) {
+    if(String(myHardware[i].label) == targetPinLabel) {
+      if(myHardware[i].signalType == SIG_PWM) {
+        myBoard->writePWM(myHardware[i].pin, (float)value);
+      } else {
+        myBoard->writeDigital(myHardware[i].pin, value);
       }
+      break;
     }
-    sendAllStates(); 
-}
+  }
+  sendAllStates(); 
+  }
 }
 
 /**

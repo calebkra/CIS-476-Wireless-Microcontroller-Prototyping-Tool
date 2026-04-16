@@ -4,7 +4,7 @@
 #include <WiFi.h>
 #include <ArduinoJson.h>
 #include "secrets.h"
-#include "MQTT.h"                     // ESP32 native AsyncMqttClient wrapper
+#include "MqttManager.h"                     // ESP32 native AsyncMqttClient wrapper
 
 // ==========================================
 //    ESP32 main (aligned with Pico version)
@@ -83,7 +83,7 @@ void setup() {
     Serial.println(WIFI_SSID);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
+        delay(5000);
         Serial.print(".");
     }
     Serial.println("\nWi-Fi Connected!");
